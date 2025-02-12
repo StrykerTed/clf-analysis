@@ -1,0 +1,18 @@
+{
+    "excluded_folder_patterns": [
+        "_Support",
+        "supports",
+        "SUPPORTS",
+        "ebm-ti64",
+        "Porous",
+        "Cylinder",
+        "Coupon",
+        "s_Skin"
+    ],
+    "metadata": {
+        "description": "List of partial folder names that should be excluded from CLF processing",
+        "version": "1.0",
+        "last_updated": "2024-03-19",
+        "usage": "Match these patterns against folder names to determine if a folder should be skipped during CLF processing"
+    }
+}

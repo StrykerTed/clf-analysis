@@ -198,3 +198,4 @@ dmypy.json
 *~
 .fuse_hidden*
 *_blackened/
+!folder_exclusions.json
