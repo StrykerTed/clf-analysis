@@ -9,6 +9,7 @@ setup(
     description='Arcam In-Situ Python SDK',
     author='Arcam EBM',
     author_email='viktor.kaernstrand@ge.com',
-    packages=find_packages(),  # Automatically find all packages
+    package_dir={'': 'src'},  # Add this line - tells setuptools to look in src
+    packages=find_packages(where='src'),  # Modify this line
     install_requires=req,
 )

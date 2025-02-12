@@ -1,20 +1,30 @@
 import os
-import json
-from pyarcam.clfutil import CLFFile
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.patches import Polygon
+import sys
+import matplotlib.pyplot as plt   
+import numpy as np      
+import json  # For JSON handling
+from matplotlib.patches import Polygon  # For polygon plotting
 
-from myfuncs.file_utils import (
+# Add parent directory to path to find setup_paths
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+import setup_paths
+
+from utils.pyarcam.clfutil import CLFFile
+
+from utils.myfuncs.file_utils import (
     create_output_folder,
     find_clf_files,
-    load_exclusion_patterns
-)
-from myfuncs.shape_things import (
-    should_close_path
+    load_exclusion_patterns,
+    should_skip_folder
 )
 
-from myfuncs.print_utils import (
+from utils.myfuncs.shape_things import (
+    should_close_path
+)
+from utils.myfuncs.print_utils import (
     add_platform_labels,
     print_analysis_summary,
     print_identifier_summary,
