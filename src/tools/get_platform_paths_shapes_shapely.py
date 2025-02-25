@@ -1,7 +1,12 @@
+# get_platform_paths_shapes_shapely.py
 import os
 import sys
 import matplotlib.pyplot as plt   
-import numpy as np      
+import numpy as np   
+from logging.handlers import QueueHandler, QueueListener   
+import logging
+from multiprocessing import Manager 
+from datetime import datetime 
 import json  # For JSON handling
 from matplotlib.patches import Polygon  # For polygon plotting
 
@@ -13,6 +18,10 @@ if root_dir not in sys.path:
 import setup_paths
 
 from utils.pyarcam.clfutil import CLFFile
+
+from utils.platform_analysis.file_handlers import (
+    setup_abp_folders,
+)
 
 from utils.myfuncs.file_utils import (
     create_output_folder,
@@ -31,20 +40,142 @@ from utils.myfuncs.print_utils import (
     create_unclosed_shapes_view
 )
 
+from utils.myfuncs.plotTools import (
+    setup_standard_platform_view, 
+    setup_platform_figure,
+    draw_platform_boundary,
+    add_reference_lines,
+    set_platform_limits,
+    draw_shape,
+    draw_aligned_shape,
+    save_platform_figure
+)
+
+def setup_logging(top_level_folder):
+    """Configure logging for multiprocessing with timestamped filename in a logging subfolder."""
+    # Create the logging subfolder in top_level_folder
+    logging_dir = os.path.join(top_level_folder, "logging")
+    os.makedirs(logging_dir, exist_ok=True)  # Create directory if it doesn't exist
+    
+    # Generate timestamp for the filename (e.g., 20250224_153022)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"shapely_abp_path_processing_{timestamp}.log"
+    log_file = os.path.join(logging_dir, log_filename)
+    
+    # Set up manager for multiprocessing
+    manager = Manager()
+    log_queue = manager.Queue()
+    
+    # File handler: logs everything to the timestamped file
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(processName)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+    
+    # Console handler: only WARNING and above
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_formatter = logging.Formatter('%(levelname)s - %(message)s')
+    console_handler.setFormatter(console_formatter)
+    
+    # Set up the root logger for the main process
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
+    
+    # Start the queue listener
+    listener = QueueListener(log_queue, file_handler, console_handler)
+    listener.start()
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging initialized. Log file: {log_file}")
+    
+    return logger, log_queue, listener
+
+def create_combined_identifier_platform_view(shapes_by_identifier, output_dir):
+    """Create a single platform view showing all identifiers with different colors"""
+    try:
+        # Create a standard platform view
+        setup_platform_figure()
+        
+        # Add standard platform elements
+        draw_platform_boundary(plt)
+        add_reference_lines(plt)
+        
+        # Skip the 'no_identifier' key if it exists
+        identifiers = [id for id in shapes_by_identifier.keys() if id != 'no_identifier']
+        
+        if not identifiers:
+            print("No identifiers found for combined view")
+            return None
+            
+        # Generate a color for each identifier
+        colors = plt.cm.tab10(np.linspace(0, 1, len(identifiers)))
+        identifier_colors = dict(zip(identifiers, colors))
+        
+        # Track statistics
+        total_shapes = 0
+        min_height = float('inf')
+        max_height = float('-inf')
+        
+        # Plot each identifier with its assigned color
+        for identifier, color in identifier_colors.items():
+            shapes_data = shapes_by_identifier[identifier]
+            
+            # Update statistics
+            total_shapes += shapes_data['count']
+            min_height = min(min_height, shapes_data['height_range'][0])
+            max_height = max(max_height, shapes_data['height_range'][1])
+            
+            # Draw a sample shape for the legend
+            plt.plot([], [], color=color, label=f"ID: {identifier}")
+            
+            # Draw all shapes for this identifier
+            for shape_info in shapes_data['shapes']:
+                if shape_info['points'] is not None:
+                    points = shape_info['points']
+                    if shape_info['type'] == 'point':
+                        plt.plot(points[0, 0], points[0, 1], 'o', 
+                                color=color, markersize=2, alpha=0.7)
+                    else:
+                        draw_shape(plt, points, color)
+                elif shape_info['type'] == 'circle':
+                    circle = plt.Circle(
+                        shape_info['center'], 
+                        shape_info['radius'], 
+                        color=color, 
+                        fill=False, 
+                        alpha=0.7
+                    )
+                    plt.gca().add_artist(circle)
+        
+        plt.title(f'Combined Identifier Platform View\n'
+                 f'Total Identifiers: {len(identifiers)}\n'
+                 f'Total Shapes: {total_shapes}\n'
+                 f'Height Range: {min_height:.2f}mm to {max_height:.2f}mm')
+        add_platform_labels(plt)
+        set_platform_limits(plt)
+        
+        # Add a legend for the identifiers
+        plt.legend(loc='upper left', bbox_to_anchor=(1.05, 1), borderaxespad=0.)
+        
+        # Save the plot
+        identifier_dir = os.path.join(output_dir, "identifier_views")
+        os.makedirs(identifier_dir, exist_ok=True)
+        filename = f'combined_identifiers_platform_view.png'
+        output_path = os.path.join(identifier_dir, filename)
+        save_platform_figure(plt, output_path)
+        
+        return os.path.join("identifier_views", filename)
+        
+    except Exception as e:
+        print(f"Error creating combined identifier platform view: {str(e)}")
+        return None
+
 def create_non_identifier_platform_view(non_id_shapes, output_dir):
     """Create a platform view showing all shapes that don't have identifiers"""
-    try:
-        plt.figure(figsize=(15, 15))
-        
-        # Draw platform boundaries
-        plt.plot([-125, 125, 125, -125, -125], 
-                [-125, -125, 125, 125, -125], 
-                'k--', alpha=0.5, label='Platform boundary')
-        
-        # Reference lines
-        plt.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
-        plt.axvline(x=0, color='gray', linestyle='-', alpha=0.3)
-        plt.grid(True, alpha=0.2)
+    try:        
+        # Create a standard platform view with common elements
+        title = f'Non-Identifier Shapes Platform View\nTotal Shapes: {len(non_id_shapes)}'
+        setup_standard_platform_view(title)
         
         # Draw all shapes without identifiers
         shape_colors = plt.cm.viridis(np.linspace(0, 1, len(non_id_shapes)))
@@ -67,107 +198,20 @@ def create_non_identifier_platform_view(non_id_shapes, output_dir):
                 )
                 plt.gca().add_artist(circle)
         
-        plt.title(f'Non-Identifier Shapes Platform View\n'
-                 f'Total Shapes: {len(non_id_shapes)}')
-        add_platform_labels(plt)
-        plt.axis('equal')
-        
-        plt.xlim(-130, 130)
-        plt.ylim(-130, 130)
-        
+        # Save the plot
         non_id_dir = os.path.join(output_dir, "non_identifier_views")
         os.makedirs(non_id_dir, exist_ok=True)
         filename = f'non_identifier_platform_view.png'
         output_path = os.path.join(non_id_dir, filename)
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        plt.close()
+        save_platform_figure(plt, output_path)
         
         return os.path.join("non_identifier_views", filename)
         
     except Exception as e:
         print(f"Error creating non-identifier platform view: {str(e)}")
         return None
-    
-def draw_aligned_shape(plt, points, color, midpoints=None, alpha=0.7, linewidth=0.5, tol=1e-6):
-    """Draw only horizontal or vertical segments between points in a path."""
-    for i in range(len(points) - 1):
-        x0, y0 = points[i]
-        x1, y1 = points[i + 1]
-        dx = x1 - x0
-        dy = y1 - y0
-        if abs(dx) < tol and abs(dy) < tol:
-            # Zero-length segment, skip
-            continue
-        elif abs(dx) < tol or abs(dy) < tol:
-            # Vertical or horizontal segment
-            plt.plot([x0, x1], [y0, y1], '-', color=color, linewidth=linewidth, alpha=1)
-            # Compute midpoint
-            xm = (x0 + x1) / 2
-            ym = (y0 + y1) / 2
-            # Mark midpoint with black dot
-            # plt.plot(xm, ym, 'ko', markersize=1, alpha=1)
-            # Store midpoint
-            if midpoints is not None:
-                midpoints.append((xm, ym))
-        else:
-            # Diagonal segment, do not draw
-            continue
 
-
-def remove_colinear_and_small_segments(points, colinear_tolerance=1e-7, min_segment_length=0.1):
-    cleaned = []
-    cleaned.append(points[0])
-    for i in range(1, len(points) - 1):
-        p_prev = points[i - 1]
-        p_curr = points[i]
-        p_next = points[i + 1]
-        v1 = p_curr - p_prev
-        v2 = p_next - p_curr
-        cross = v1[0]*v2[1] - v1[1]*v2[0]
-        length_v1 = np.linalg.norm(v1)
-        # Remove point if nearly colinear or if the segment is too short
-        if abs(cross) < colinear_tolerance or length_v1 < min_segment_length:
-            continue
-        cleaned.append(p_curr)
-    cleaned.append(points[-1])
-    return np.array(cleaned)
-
-def has_mostly_right_angles(points, angle_tolerance=15, right_angle_threshold=0.75):
-    if len(points) < 3:
-        return False
-
-    # Remove colinear points and very short segments before checking angles
-    points = remove_colinear_and_small_segments(points)
-    if len(points) < 4:
-        return False
-
-    angles = []
-    n_points = len(points)
-    for i in range(n_points):
-        p1 = points[i]
-        p2 = points[(i + 1) % n_points]
-        p3 = points[(i + 2) % n_points]
-        v1 = p2 - p1
-        v2 = p3 - p2
-        if np.all(v1 == 0) or np.all(v2 == 0):
-            continue
-        dot_product = np.dot(v1, v2)
-        norms = np.linalg.norm(v1) * np.linalg.norm(v2)
-        if norms == 0:
-            continue
-        cos_angle = dot_product / norms
-        cos_angle = np.clip(cos_angle, -1.0, 1.0)
-        angle = np.degrees(np.arccos(cos_angle))
-        angles.append(angle)
-
-    if not angles:
-        return False
-
-    right_angles = sum(1 for angle in angles if abs(angle - 90) < angle_tolerance)
-    right_angle_percentage = right_angles / len(angles)
-    return right_angle_percentage >= right_angle_threshold
-
-def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, alignment_style_only=False, save_clean_png=False):
+def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, alignment_style_only=False, save_clean_png=True):
     """Create a clean platform view without any chart elements, just shapes, and save raw path data."""
     # Initialize list to store shape data
     shape_data_list = []
@@ -179,7 +223,8 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
     # Only create plot if save_clean_png is True
     if save_clean_png:
         # Create figure with equal aspect ratio
-        fig = plt.figure(figsize=(15, 15))
+        fig = setup_platform_figure(figsize=(15, 15))
+        
         # Remove all margins and spacing
         ax = plt.gca()
         ax.set_position([0, 0, 1, 1])
@@ -299,29 +344,37 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
             print(f"Error processing {clf_info['name']} for clean platform: {str(e)}")
     
     # Only save PNG if save_clean_png is True
-    if save_clean_png:
+    if save_clean_png:        
         plt.axis('equal')  # Ensure perfect square
         filename = f'clean_platform_{height}mm.png'
         output_path = os.path.join(output_dir, "clean_platforms", filename)
-        plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0)
-        plt.close()
+        save_platform_figure(plt, output_path, pad_inches=0)
         png_path = os.path.join("clean_platforms", filename)
     else:
         png_path = None
     
     # Save the shape data to a file
     try:
-        # Create 'imagePathRawData' directory if it doesn't exist
-        raw_data_dir = os.path.join(output_dir, "imagePathRawData")
+        # Extract build number from ABP filename
+        abp_name = os.path.basename(output_dir)
+        build_number = abp_name.split('-')[1].split('.')[0] if '-' in abp_name else ''
+        
+        # Create directory with build number
+        raw_data_dir = os.path.join(output_dir, f"imagePathRawData-{build_number}")
         os.makedirs(raw_data_dir, exist_ok=True)
-    
+
         # Construct filename
         data_filename = f'platform_layer_pathdata_{height}mm.json'
         data_output_path = os.path.join(raw_data_dir, data_filename)
         
         # Write the data to file
+        print(f"\nWriting shape data to: {data_output_path}")
+        print(f"Number of shapes being written: {len(shape_data_list)}")
+        
         with open(data_output_path, 'w') as f:
             json.dump(shape_data_list, f, indent=2)
+        
+        print(f"Successfully wrote shape data for height {height}mm")
         
     except Exception as e:
         print(f"Error saving shape data for clean platform at height {height}mm: {str(e)}")
@@ -506,31 +559,28 @@ def analyze_layer(clf_file, height, output_dir, clf_info, path_counts, shape_typ
                         
         image_path = None          
         if save_layer_partials:
-            # Draw platform boundary and axes
-            plt.plot([-125, 125, 125, -125, -125], 
-                    [-125, -125, 125, 125, -125], 
-                    'r--', alpha=0.3, label='Platform boundary (-125 to +125mm)')
+            # Create figure
+            setup_platform_figure(figsize=(12, 12))
             
-            plt.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
-            plt.axvline(x=0, color='gray', linestyle='--', alpha=0.5)
+            # Draw platform boundary and axes with custom styling
+            draw_platform_boundary(plt, color='r', alpha=0.3, 
+                                label='Platform boundary (-125 to +125mm)')
+            add_reference_lines(plt, alpha=0.5)
             
             plt.title(f'Layer at Height: {height:.3f}mm\nSource: {clf_info["name"]} in {clf_info["folder"]}')
             plt.xlabel('X (mm)')
             plt.ylabel('Y (mm)')
-        
+
             plt.grid(True)
             plt.legend()
             
-            plt.xlim(-130, 130)
-            plt.ylim(-130, 130)
-            plt.axis('equal')
+            set_platform_limits(plt)
             
             sanitized_folder = clf_info["folder"].replace('/', '_').replace('\\', '_')
             filename = f'layer_{height:.3f}mm_{clf_info["name"]}_{sanitized_folder}.png'
             
             output_path = os.path.join(output_dir, "layer_partials", filename)
-            plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.1)
-            plt.close()
+            save_platform_figure(plt, output_path)
             
             image_path = os.path.join("layer_partials", filename)
         
@@ -558,39 +608,17 @@ def analyze_layer(clf_file, height, output_dir, clf_info, path_counts, shape_typ
     except Exception as e:
         print(f"Error in layer analysis: {str(e)}")
         return f"Error analyzing layer: {str(e)}"
-    
-def draw_shape(plt, points, color, alpha=0.7, linewidth=0.5):
-    """Draw a shape, closing the path if appropriate"""
-    if len(points) < 2:
-        plt.plot(points[0, 0], points[0, 1], 'o', 
-                color=color, markersize=2, alpha=alpha)
-        return
-        
-    # Draw the original points
-    plt.plot(points[:, 0], points[:, 1], '-', 
-            color=color, linewidth=linewidth, alpha=alpha)
-    
-    # If should be closed, add closure line
-    if should_close_path(points):
-        # Draw closing line
-        closure_points = np.vstack([points[-1], points[0]])
-        plt.plot(closure_points[:, 0], closure_points[:, 1], '-', 
-                color=color, linewidth=linewidth, alpha=alpha)
+ 
 
 def create_identifier_platform_view(identifier, shapes_data, output_dir):
     """Create a platform view showing all shapes for a specific identifier"""
-    try:
-        plt.figure(figsize=(15, 15))
+    try:        
+        # Create figure
+        setup_platform_figure()
         
-        # Draw platform boundaries
-        plt.plot([-125, 125, 125, -125, -125], 
-                [-125, -125, 125, 125, -125], 
-                'k--', alpha=0.5, label='Platform boundary')
-        
-        # Reference lines
-        plt.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
-        plt.axvline(x=0, color='gray', linestyle='-', alpha=0.3)
-        plt.grid(True, alpha=0.2)
+        # Add standard platform elements
+        draw_platform_boundary(plt)
+        add_reference_lines(plt)
         
         # Draw all shapes for this identifier
         height_range = shapes_data['height_range']
@@ -620,41 +648,33 @@ def create_identifier_platform_view(identifier, shapes_data, output_dir):
                  f'Total Shapes: {total_shapes}\n'
                  f'Height Range: {height_range[0]:.2f}mm to {height_range[1]:.2f}mm')
         add_platform_labels(plt)
-        plt.axis('equal')
-        
-        plt.xlim(-130, 130)
-        plt.ylim(-130, 130)
+        set_platform_limits(plt)
         
         identifier_dir = os.path.join(output_dir, "identifier_views")
         os.makedirs(identifier_dir, exist_ok=True)
         filename = f'identifier_{identifier}_platform_view.png'
         output_path = os.path.join(identifier_dir, filename)
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        plt.close()
+        save_platform_figure(plt, output_path)
         
         return os.path.join("identifier_views", filename)
         
     except Exception as e:
         print(f"Error creating identifier platform view for ID {identifier}: {str(e)}")
         return None
-
+    
 def create_platform_composite_with_folders(clf_files, output_dir, height=1.0, fill_closed=False):
-    """Create a composite view with unique colors per folder and a legend"""
-    plt.figure(figsize=(15, 15))
+    """Create a composite view with unique colors per folder and a legend"""    
+    # Create figure
+    setup_platform_figure()
     
     # Get unique folders and assign colors using a colormap
     folders = sorted(list(set(clf_info['folder'] for clf_info in clf_files)))
     colors = plt.cm.tab20(np.linspace(0, 1, len(folders)))  # Use tab20 for distinct colors
     folder_colors = dict(zip(folders, colors))
     
-    # Platform boundary
-    plt.plot([-125, 125, 125, -125, -125], 
-            [-125, -125, 125, 125, -125], 
-            'k--', alpha=0.5, label='Platform boundary')
-    
-    plt.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
-    plt.axvline(x=0, color='gray', linestyle='-', alpha=0.3)
-    plt.grid(True, alpha=0.2)
+    # Add standard platform elements
+    draw_platform_boundary(plt)
+    add_reference_lines(plt)
     
     # Track which folders we've seen for legend
     folders_seen = set()
@@ -697,32 +717,23 @@ def create_platform_composite_with_folders(clf_files, output_dir, height=1.0, fi
     
     plt.title(f'Platform Composite View at Height {height}mm')
     add_platform_labels(plt)
-   
-    plt.xlim(-130, 130)
-    plt.ylim(-130, 130)
-    plt.axis('equal')
+    set_platform_limits(plt)
     
     # Create legend with folder names
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
     
     filename = f'platform_composite_folders_{height}mm.png'
     output_path = os.path.join(output_dir, "composite_platforms", filename)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.1)
-    plt.close()
+    save_platform_figure(plt, output_path)
     
     return os.path.join("composite_platforms", filename)
 
 def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=False):
     """Create a composite view of all shapes at specified height"""
-    plt.figure(figsize=(15, 15))
-    
-    plt.plot([-125, 125, 125, -125, -125], 
-            [-125, -125, 125, 125, -125], 
-            'k--', alpha=0.5, label='Platform boundary')
-    
-    plt.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
-    plt.axvline(x=0, color='gray', linestyle='-', alpha=0.3)
-    plt.grid(True, alpha=0.2)
+
+    # Create a standard platform view with title
+    title = f'Platform Composite View at Height {height}mm'
+    setup_standard_platform_view(title)
     
     colors = {
         'Part.clf': 'blue',
@@ -754,7 +765,7 @@ def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=Fal
                                 polygon = Polygon(points, facecolor='black', edgecolor=color, alpha=0.5)
                                 plt.gca().add_patch(polygon)
                             else:
-                                # Draw unfilled shape as before
+                                # Draw unfilled shape
                                 draw_shape(plt, points, color)
                                 
                             if not shapes_found:
@@ -764,21 +775,15 @@ def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=Fal
         except Exception as e:
             print(f"Error processing {clf_info['name']} for platform view: {str(e)}")
     
-    plt.title(f'Platform Composite View at Height {height}mm')
-    add_platform_labels(plt)
-   
-    plt.xlim(-130, 130)
-    plt.ylim(-130, 130)
-    plt.axis('equal')
-    
+    # Add legend
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
     plt.legend(by_label.values(), by_label.keys())
     
+    # Save figure
     filename = f'platform_composite_{height}mm.png'
     output_path = os.path.join(output_dir, "composite_platforms", filename)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.1)
-    plt.close()
+    save_platform_figure(plt, output_path)
     
     return os.path.join("composite_platforms", filename)
 
@@ -804,52 +809,80 @@ def get_max_layer_height(clf_files):
     return max_height
 
 def main():
-    wanted_layer_heights = list(range(1, 201))
+    wanted_layer_heights = list(range(1, 201, 5))
     
+    # Get the directory paths (do this once)
+    script_dir = os.path.dirname(os.path.abspath(__file__))  # gets /tools directory
+    src_dir = os.path.dirname(script_dir)                    # gets /src directory
+    project_root = os.path.dirname(src_dir)                  # gets project root
+    config_dir = os.path.join(src_dir, 'config')            # gets /src/config
+    
+    print(f"Script directory: {script_dir}")
+    print(f"Project root: {project_root}")
+
+    logger, log_queue, listener = setup_logging(project_root)
+    abp_file = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-271120.abp"
+    logger.info(f"Processing ABP file: {abp_file}")
+    
+    build_dir = setup_abp_folders(abp_file)
+    logger.info(f"Build directory set up at: {build_dir}")
+
+
     try:
         draw_points = 'y'
         draw_lines = 'y'
-        fill_closed = input("Fill in closed shapes? (y/n): ").lower().startswith('y')
+        fill_closed = 'y'
         exclude_folders = 'y'
-        save_layer_partials = input("Save Layer Partials? (y/n): ").lower().startswith('y') 
-        save_clean = input("Save Clean Platforms? (y/n): ").lower().startswith('y')
-        save_clean_png = input("Save Clean Platforms PNG? (y/n): ").lower().startswith('y')
-                # Ask for alignment style images only
-        alignment_style_only = input("Alignment style images only? (y/n): ").lower().startswith('y')
+        save_layer_partials = False 
+        save_clean = 'y'
+        save_clean_png = False
+        alignment_style_only = False
         
+        logger.info("Configuration parameters:")
+        logger.info(f"  - Draw Points: {draw_points}")
+        logger.info(f"  - Draw Lines: {draw_lines}")
+        logger.info(f"  - Fill Closed Shapes: {fill_closed}")
+        logger.info(f"  - Exclude Folders: {exclude_folders}")
+        logger.info(f"  - Save Layer Partials: {save_layer_partials}")
+        logger.info(f"  - Save Clean Platforms: {save_clean}")
+        logger.info(f"  - Save Clean PNG: {save_clean_png}")
+        logger.info(f"  - Alignment Style Only: {alignment_style_only}")
+
         # Only ask for height mode if saving clean platforms
         clean_heights = None
         if save_clean:
-            height_choice = input("Want full range of clean platform images or a sample? (full/sample): ").lower()
+            height_choice = 'full'
             if height_choice == 'full':
-                print("Will process full range of heights at 0.05mm intervals")
+                logger.info("Will process full range of heights at 0.05mm intervals")
             else:
-                print("Will process sample heights only")
-        
-        exclusion_patterns = load_exclusion_patterns(os.path.dirname(os.path.abspath(__file__))) if exclude_folders else []
+                logger.info("Will process sample heights only")
+
+        # Load exclusion patterns
+        exclusion_patterns = load_exclusion_patterns(config_dir) if exclude_folders else []
         
         if exclude_folders:
-            print("\nExcluding folders containing these patterns:")
+            logger.info("Excluding folders containing these patterns:")
             for pattern in exclusion_patterns:
-                print(f"- {pattern}")
-        
-        base_dir = os.getcwd()
-        abpfoldername = "preprocess build-271152.abp"
-        build_dir = os.path.join(base_dir, abpfoldername)
-        output_dir = create_output_folder(abpfoldername, base_dir, save_layer_partials, alignment_style_only)
+                logger.info(f"  - {pattern}")
+
+        # Create output directory based on the ABP filename
+        abp_name = os.path.basename(build_dir)
+        output_dir = create_output_folder(abp_name, project_root, save_layer_partials, alignment_style_only)
+        logger.info(f"Created output directory at: {output_dir}")
+        logger.info(f"Project root directory at: {project_root}")
         
         # Create clean_platforms directory if needed
         if save_clean:
             clean_platforms_dir = os.path.join(output_dir, "clean_platforms")
             os.makedirs(clean_platforms_dir, exist_ok=True)
-            print(f"Created clean platforms directory: {clean_platforms_dir}")
+            logger.info(f"Created clean platforms directory: {clean_platforms_dir}")
         
-        print(f"\nLooking for build directory at: {build_dir}")
+        logger.info(f"Looking for build directory at: {build_dir}")
         if not os.path.exists(build_dir):
-            print("Build directory not found!")
+            logger.error("Build directory not found!")
             return
             
-        print("\nFinding CLF files...")
+        logger.info("Finding CLF files...")
         all_clf_files = find_clf_files(build_dir)
         
         # Filter CLF files based on exclusion patterns
@@ -858,18 +891,18 @@ def main():
             for clf_info in all_clf_files:
                 should_skip = should_skip_folder(clf_info['folder'], exclusion_patterns)
                 if should_skip:
-                    print(f"Skipping file: {clf_info['name']} in {clf_info['folder']}")
+                    logger.debug(f"Skipping file: {clf_info['name']} in {clf_info['folder']}")
                 else:
                     clf_files.append(clf_info)
-                    print(f"Keeping file: {clf_info['name']} in {clf_info['folder']}")
+                    logger.debug(f"Keeping file: {clf_info['name']} in {clf_info['folder']}")
                     
             excluded_count = len(all_clf_files) - len(clf_files)
-            print(f"Found {len(all_clf_files)} total CLF files")
-            print(f"Excluded {excluded_count} files based on folder patterns")
-            print(f"Processing {len(clf_files)} CLF files")
+            logger.info(f"Found {len(all_clf_files)} total CLF files")
+            logger.info(f"Excluded {excluded_count} files based on folder patterns")
+            logger.info(f"Processing {len(clf_files)} CLF files")
         else:
             clf_files = all_clf_files
-            print(f"Found {len(clf_files)} CLF files")
+            logger.info(f"Found {len(clf_files)} CLF files")
         
         # Dictionaries to track statistics
         path_counts = {}
@@ -995,6 +1028,16 @@ def main():
             except Exception as e:
                 print(f"Error creating view for {'non-identifier shapes' if identifier == 'no_identifier' else f'ID {identifier}'}: {str(e)}")
         
+        # Create a combined view of all identifiers
+        print("\nGenerating combined identifier platform view...")
+        combined_view_file = create_combined_identifier_platform_view(shapes_by_identifier, output_dir)
+        if combined_view_file:
+            platform_info["combined_identifier_view"] = {
+                "filename": combined_view_file,
+                "total_identifiers": len([id for id in shapes_by_identifier.keys() if id != 'no_identifier'])
+            }
+            print(f"Created combined identifier view with {platform_info['combined_identifier_view']['total_identifiers']} identifiers")
+
         # Print summary information
         print_identifier_summary(platform_info["file_identifier_summary"], closed_paths_found)
         
@@ -1028,14 +1071,14 @@ def main():
                 
             for height in clean_heights:
                 try:
-                    print(f"Creating clean platform view at height {height}mm...")
+                    print(f"Processing height {height}mm...")
                     clean_file = create_clean_platform(
                         clf_files, 
                         output_dir,
                         height=height,
                         fill_closed=fill_closed,
                         alignment_style_only=alignment_style_only,
-                        save_clean_png=save_clean_png
+                        save_clean_png=True
                     )
 
                     if save_clean_png and clean_file:
@@ -1044,8 +1087,6 @@ def main():
                             "filename": clean_file
                         })
                         print(f"Created clean platform at {height}mm: {clean_file}")
-                    elif not save_clean_png:
-                        print(f"Skipped clean platform PNG creation at {height}mm")
                 except Exception as e:
                     print(f"Error creating clean platform at height {height}mm: {str(e)}")
         
@@ -1079,10 +1120,17 @@ def main():
         with open(summary_path, 'w') as f:
             json.dump(platform_info, f, indent=2)
             
+        logger.info(f"Saved platform info to: {summary_path}")
         print_analysis_summary(platform_info, closed_paths_found, shape_types, output_dir, summary_path)
             
+        logger.info("Platform path analysis completed successfully")
+            
     except Exception as e:
-        print(f"Error in main execution: {str(e)}")
+        logger.error(f"Error in main execution: {str(e)}", exc_info=True)
+    finally:
+        # Clean up the logging listener
+        logger.info("Shutting down logging listener")
+        listener.stop()
              
 if __name__ == "__main__":
     main()

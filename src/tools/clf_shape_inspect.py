@@ -121,7 +121,7 @@ def main():
         
         # Find the build directory
         base_dir = os.getcwd()
-        build_dir = os.path.join(base_dir, "preprocess build-270851.abp")
+        build_dir = os.path.join(base_dir, "preprocess build-270851.axbp")
         models_dir = os.path.join(build_dir, "Models", subfolder)
         
         print(f"Looking in: {models_dir}")

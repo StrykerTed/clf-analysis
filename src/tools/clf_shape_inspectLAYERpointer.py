@@ -20,7 +20,7 @@ def main():
     try:
         # Get first CLF file
         base_dir = os.getcwd()
-        build_dir = os.path.join(base_dir, "preprocess build-270851.abp")
+        build_dir = os.path.join(base_dir, "preprocess build-270851.axbp")
         models_dir = os.path.join(build_dir, "Models", "Stack_0_Skin_ Stock_Merge")
         
         clf_files = [f for f in os.listdir(models_dir) if f.endswith('.clf')]

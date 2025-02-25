@@ -55,7 +55,7 @@ def analyze_encrypted_section(data):
 def main():
     try:
         base_dir = os.getcwd()
-        build_dir = os.path.join(base_dir, "preprocess build-270851.abp")
+        build_dir = os.path.join(base_dir, "preprocess build-270851.ab p")
         start_plate_dir = os.path.join(build_dir, "StartPlate")
         
         if not os.path.exists(start_plate_dir):
