@@ -323,17 +323,137 @@ def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=Fal
     return os.path.join("composite_platforms", filename)
 
 
-def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, alignment_style_only=False, save_clean_png=True):
-    """Create a clean platform view without any chart elements, just shapes, and save raw path data."""
-    # Initialize list to store shape data
+def process_layer_data(clf_info, height, colors):
+    """Helper function to process a single layer and extract shape data.
+    Used by create_clean_platform for parallel processing."""
     shape_data_list = []
     
-    # If alignment_style_only, declare midpoints list
-    if alignment_style_only:
-        midpoints = []
+    try:
+        part = CLFFile(clf_info['path'])
+        if not hasattr(part, 'box'):
+            return shape_data_list
+            
+        layer = part.find(height)
+        if layer is None:
+            return shape_data_list
+            
+        if hasattr(layer, 'shapes'):
+            for shape in layer.shapes:
+                color = colors.get(clf_info['name'], 'gray')
+                # --- Gather shape identifier if it exists ---
+                shape_identifier = None
+                if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
+                    shape_identifier = shape.model.id
+                if hasattr(shape, 'points') and shape.points:
+                    points = shape.points[0]
+                    if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
+                        should_close = False
+                        # Safely call should_close_path
+                        try:
+                            should_close = should_close_path(points)
+                            # Convert numpy bool to Python bool if needed
+                            if hasattr(should_close, 'item'):
+                                should_close = should_close.item()
+                        except Exception as e:
+                            print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
+                            should_close = False
+                        
+                        # Collect shape data
+                        shape_data = {
+                            'type': 'path',
+                            'points': points.tolist(),
+                            'color': color,
+                            'clf_name': clf_info['name'],
+                            'clf_folder': clf_info['folder'],
+                            'fill_closed': True,  # Set default, will be updated by main function
+                            'should_close': should_close,
+                            'identifier': shape_identifier
+                        }
+                        shape_data_list.append(shape_data)
+                    else:
+                        # Handle invalid points data
+                        print(f"Invalid points in shape in {clf_info['name']}")
+                        shape_data = {
+                            'type': 'invalid',
+                            'points': None,
+                            'color': color,
+                            'clf_name': clf_info['name'],
+                            'clf_folder': clf_info['folder'],
+                            'fill_closed': True,  # Set default
+                            'identifier': shape_identifier
+                        }
+                        shape_data_list.append(shape_data)
+                elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
+                    # Collect circle data
+                    shape_data = {
+                        'type': 'circle',
+                        'center': shape.center.tolist(),
+                        'radius': shape.radius,
+                        'color': color,
+                        'clf_name': clf_info['name'],
+                        'clf_folder': clf_info['folder'],
+                        'fill_closed': True,  # Set default
+                        'identifier': shape_identifier
+                    }
+                    shape_data_list.append(shape_data)
+                else:
+                    # Handle other shape types if necessary
+                    print(f"Unrecognized shape type in {clf_info['name']}")
+                    shape_data = {
+                        'type': 'unknown',
+                        'color': color,
+                        'clf_name': clf_info['name'],
+                        'clf_folder': clf_info['folder'],
+                        'fill_closed': True,  # Set default
+                        'identifier': shape_identifier
+                    }
+                    shape_data_list.append(shape_data)
+                 
+    except Exception as e:
+        print(f"Error processing {clf_info['name']} for clean platform: {str(e)}")
+    
+    return shape_data_list
+
+
+def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, alignment_style_only=False, save_clean_png=True):
+    """Create a clean platform view without any chart elements, just shapes, and save raw path data.
+    Uses multiprocessing to speed up processing of multiple files."""
+    import os
+    from multiprocessing import Pool
+    import json
+    
+    # Define colors dictionary outside of the processing function
+    colors = {
+        'Part.clf': 'blue',
+        'WaferSupport.clf': 'red',
+        'Net.clf': 'green'
+    }
+    
+    # Set up multiprocessing pool
+    # Use min of CPU count and number of files to avoid creating too many processes
+    num_processes = min(os.cpu_count(), len(clf_files))
+    print(f"Processing layer at height {height}mm using {num_processes} parallel processes...")
+    
+    # Process all CLF files in parallel
+    with Pool(processes=num_processes) as pool:
+        # Map the processing function to the arguments
+        results = pool.starmap(process_layer_data, [(clf_info, height, colors) for clf_info in clf_files])
+    
+    # Combine all results into a single list
+    shape_data_list = []
+    for result in results:
+        shape_data_list.extend(result)
+    
+    # Update fill_closed for all shapes
+    for shape_data in shape_data_list:
+        shape_data['fill_closed'] = fill_closed
     
     # Only create plot if save_clean_png is True
     if save_clean_png:
+        # If alignment_style_only, declare midpoints list
+        if alignment_style_only:
+            midpoints = []
+            
         # Create figure with equal aspect ratio
         fig = setup_platform_figure(figsize=(15, 15))
         
@@ -351,112 +471,26 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
         ax.set_xticklabels([])
         ax.set_yticklabels([])
         plt.axis('off')
-    
-    colors = {
-        'Part.clf': 'blue',
-        'WaferSupport.clf': 'red',
-        'Net.clf': 'green'
-    }
-    
-    for clf_info in clf_files:
-        try:
-            part = CLFFile(clf_info['path'])
-            if not hasattr(part, 'box'):
-                continue
+        
+        # Draw all shapes
+        for shape_data in shape_data_list:
+            if shape_data['type'] == 'path' and 'points' in shape_data:
+                points = np.array(shape_data['points'])
+                color = shape_data['color']
                 
-            layer = part.find(height)
-            if layer is None:
-                continue
-                
-            if hasattr(layer, 'shapes'):
-                for shape in layer.shapes:
-                    color = colors.get(clf_info['name'], 'gray')
-                    # --- Gather shape identifier if it exists ---
-                    shape_identifier = None
-                    if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
-                        shape_identifier = shape.model.id
-                    if hasattr(shape, 'points') and shape.points:
-                        points = shape.points[0]
-                        if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
-                            should_close = False
-                            # Safely call should_close_path
-                            try:
-                                should_close = should_close_path(points)
-                            except Exception as e:
-                                print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
-                                should_close = False
-                            
-                            # Collect shape data
-                            shape_data = {
-                                'type': 'path',
-                                'points': points.tolist(),
-                                'color': color,
-                                'clf_name': clf_info['name'],
-                                'clf_folder': clf_info['folder'],
-                                'fill_closed': fill_closed,
-                                'identifier': shape_identifier
-                            }
-                            shape_data_list.append(shape_data)
-                            
-                            # Only plot if save_clean_png is True
-                            if save_clean_png:
-                                if alignment_style_only:
-                                    draw_aligned_shape(plt, points, color, midpoints=midpoints)
-                                else:
-                                    if fill_closed and should_close:
-                                        polygon = Polygon(points, facecolor='black', edgecolor=color, alpha=0.5)
-                                        plt.gca().add_patch(polygon)
-                                    else:
-                                        draw_shape(plt, points, color)
-                        else:
-                            # Handle invalid points data
-                            print(f"Invalid points in shape in {clf_info['name']}")
-                            shape_data = {
-                                'type': 'invalid',
-                                'points': None,
-                                'color': color,
-                                'clf_name': clf_info['name'],
-                                'clf_folder': clf_info['folder'],
-                                'fill_closed': fill_closed,
-                                'identifier': shape_identifier
-                            }
-                            shape_data_list.append(shape_data)
-                    elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
-                        # Collect circle data
-                        shape_data = {
-                            'type': 'circle',
-                            'center': shape.center.tolist(),
-                            'radius': shape.radius,
-                            'color': color,
-                            'clf_name': clf_info['name'],
-                            'clf_folder': clf_info['folder'],
-                            'fill_closed': fill_closed,
-                            'identifier': shape_identifier
-                        }
-                        shape_data_list.append(shape_data)
-                        
-                        # Only plot if save_clean_png is True
-                        if save_clean_png:
-                            circle = plt.Circle(shape.center, shape.radius, color=color, fill=False, alpha=0.7)
-                            plt.gca().add_artist(circle)
+                if alignment_style_only:
+                    draw_aligned_shape(plt, points, color, midpoints=midpoints)
+                else:
+                    if fill_closed and shape_data.get('should_close', False):
+                        polygon = Polygon(points, facecolor='black', edgecolor=color, alpha=0.5)
+                        plt.gca().add_patch(polygon)
                     else:
-                        # Handle other shape types if necessary
-                        print(f"Unrecognized shape type in {clf_info['name']}")
-                        shape_data = {
-                            'type': 'unknown',
-                            'color': color,
-                            'clf_name': clf_info['name'],
-                            'clf_folder': clf_info['folder'],
-                            'fill_closed': fill_closed,
-                            'identifier': shape_identifier
-                        }
-                        shape_data_list.append(shape_data)
-                     
-        except Exception as e:
-            print(f"Error processing {clf_info['name']} for clean platform: {str(e)}")
-    
-    # Only save PNG if save_clean_png is True
-    if save_clean_png:        
+                        draw_shape(plt, points, color)
+            elif shape_data['type'] == 'circle':
+                circle = plt.Circle(shape_data['center'], shape_data['radius'], 
+                                   color=shape_data['color'], fill=False, alpha=0.7)
+                plt.gca().add_artist(circle)
+                
         plt.axis('equal')  # Ensure perfect square
         filename = f'clean_platform_{height}mm.png'
         output_path = os.path.join(output_dir, "clean_platforms", filename)
@@ -485,7 +519,6 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
         print(f"Number of shapes being written: {len(shape_data_list)}")
         
         with open(data_output_path, 'w') as f:
-            import json
             json.dump(shape_data_list, f, indent=2)
         
         print(f"Successfully wrote shape data for height {height}mm")
