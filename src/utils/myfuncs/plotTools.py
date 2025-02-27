@@ -20,9 +20,15 @@ def add_reference_lines(plt, alpha=0.3, grid_alpha=0.2):
 
 def set_platform_limits(plt, margin=5):
     """Sets the standard axis limits for platform plots with optional margin"""
-    plt.xlim(-125-margin, 125+margin)
-    plt.ylim(-125-margin, 125+margin)
-    plt.axis('equal')
+    # Set the limit value with margin
+    limit = 125 + margin
+    
+    # Set equal aspect ratio first (this is more important for visualization correctness)
+    plt.gca().set_aspect('equal', adjustable='box')
+    
+    # Then set the limits
+    plt.xlim(-limit, limit)
+    plt.ylim(-limit, limit)
 
 def setup_clean_platform_figure(figsize=(15, 15)):
     """Creates a figure specifically for clean platform views with no chart elements"""
