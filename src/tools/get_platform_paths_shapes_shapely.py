@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np   
 import logging
 import json
+from config import PROJECT_ROOT, MY_OUTPUTS
 
 # Add parent directory to path to find setup_paths
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -59,17 +60,16 @@ from utils.platform_analysis.config_utils import (
 def main():
     wanted_layer_heights = list(range(1, 201, 5))
     
-    # Get the directory paths using the new utility function
-    paths = get_project_paths()
-    script_dir = paths["script_dir"]
-    project_root = paths["project_root"]
-    config_dir = paths["config_dir"]
+    # Use config.py for project paths
+    project_root = PROJECT_ROOT
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_dir = os.path.join(project_root, "config")
     
     print(f"Script directory: {script_dir}")
     print(f"Project root: {project_root}")
 
     logger, log_queue, listener = setup_logging(project_root)
-    abp_file = "/Users/ted.tedford/Library/CloudStorage/OneDrive-Stryker/EBM4/preprocess build-411821.abp"
+    abp_file = "/Users/ted.tedford/Library/CloudStorage/OneDrive-Stryker/EBM4/preprocess build-271120.abp"
 
     logger.info(f"Processing ABP file: {abp_file}")
     
@@ -115,7 +115,8 @@ def main():
 
         # Create output directory based on the ABP filename
         abp_name = os.path.basename(build_dir)
-        output_dir = create_output_folder(abp_name, project_root, save_layer_partials, alignment_style_only)
+        # Use MY_OUTPUTS from config.py as the parent directory
+        output_dir = create_output_folder(abp_name, MY_OUTPUTS, save_layer_partials, alignment_style_only)
         logger.info(f"Created output directory at: {output_dir}")
         
         # Setup all required directories
