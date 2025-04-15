@@ -343,26 +343,28 @@ def main():
             else:
                 clean_heights = wanted_layer_heights
                 print(f"Processing sample layers: {clean_heights}")
-            for height in clean_heights:
-                try:
-                    print(f"Processing height {height}mm...")
-                    clean_file = create_clean_platform(
-                        clf_files, 
-                        output_dir,
-                        height=height,
-                        fill_closed=fill_closed,
-                        alignment_style_only=alignment_style_only,
-                        save_clean_png=True
-                    )
-
-                    if save_clean_png and clean_file:
-                        platform_info["clean_platforms"].append({
-                            "height": height,
-                            "filename": clean_file
-                        })
-                        print(f"Created clean platform at {height}mm: {clean_file}")
-                except Exception as e:
-                    print(f"Error creating clean platform at height {height}mm: {str(e)}")
+            
+            # Set up multiprocessing pool for processing heights in parallel
+            # Use a smaller number of processes to avoid overloading the system
+            # since each height process will itself use multiprocessing
+            num_heights_processes = min(16, multiprocessing.cpu_count(), len(clean_heights))
+            print(f"Processing {len(clean_heights)} heights using {num_heights_processes} parallel processes...")
+            
+            # Prepare arguments for each height
+            args_list = [(height, clf_files, output_dir, fill_closed, alignment_style_only, True) 
+                        for height in clean_heights]
+            
+            # Process heights in parallel
+            with Pool(processes=num_heights_processes) as pool:
+                results = pool.map(process_height, args_list)
+            
+            # Process results
+            for result in results:
+                if result.get("success", False):
+                    platform_info["clean_platforms"].append({
+                        "height": result["height"],
+                        "filename": result["filename"]
+                    })
         
         # Add closed paths information to final JSON
         platform_info["closed_paths_summary"] = closed_paths_found

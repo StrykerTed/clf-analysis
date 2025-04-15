@@ -1,12 +1,14 @@
-# CLF Analysis Clean - Dev Guide
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Environment Setup & Commands
 - Setup venv: `python3.11 -m venv venv && source venv/bin/activate`
 - Install dependencies: `pip install -r requirements.txt`
 - Install package: `python setup.py install`
-- Update requirements: `pip freeze > requirements.txt`
+- Run tool: `python src/tools/get_platform_paths_shapes_shapely.py`
 - Run example: `python examples/example_clf.py`
-- Run specific tool: `python src/tools/get_platform_paths_shapes_shapely.py`
+- Run tests: `python -m unittest discover src/tools/tests`
 
 ## Code Style
 - Imports: Standard library first, then third-party, then local modules
@@ -25,28 +27,21 @@
 
 ## Project Structure
 - Tools in `src/tools/` - standalone scripts
-- Core utilities in `src/utils/`
-- Use relative imports within the package
-- Examples in `examples/` directory
+- Core utilities in `src/utils/` with submodules:
+  - `myfuncs/` - General utility functions
+  - `platform_analysis/` - Analysis modules for platforms
+  - `pyarcam/` - CLF and Arcam EBM machine data handling
+- Examples in `examples/` - Sample usage scripts
 
 ## Performance Optimization
 - Use multiprocessing for CPU-bound tasks:
   ```python
   from multiprocessing import Pool
   
-  # Use min of CPU count and number of tasks to avoid creating too many processes
   num_processes = min(os.cpu_count(), len(tasks))
   
-  # Create a helper function for processing a single item
-  def process_item(item):
-      # Process the item
-      return result
-      
-  # Process all items in parallel
   with Pool(processes=num_processes) as pool:
       results = pool.map(process_item, items)
-  ```
-- For more complex parallel tasks with multiple arguments, use `starmap`:
-  ```python
-  results = pool.starmap(process_item, [(arg1, arg2, ...) for item in items])
+  # For multiple arguments: 
+  # results = pool.starmap(process_item, [(arg1, arg2) for item in items])
   ```

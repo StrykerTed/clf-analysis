@@ -201,3 +201,4 @@ dmypy.json
 *contents/
 my_outputs/
 !folder_exclusions.json
+CLAUDE.md

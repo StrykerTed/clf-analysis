@@ -92,6 +92,9 @@ def create_combined_identifier_platform_view(shapes_by_identifier, output_dir):
         output_path = os.path.join(identifier_dir, filename)
         save_platform_figure(plt, output_path)
         
+        # Create transparent version with just the paths
+        create_transparent_paths_view(shapes_by_identifier, output_dir)
+        
         return os.path.join("identifier_views", filename)
         
     except Exception as e:
@@ -211,6 +214,9 @@ def create_platform_composite_with_folders(clf_files, output_dir, height=1.0, fi
     # Track which folders we've seen for legend
     folders_seen = set()
     
+    # Collect all shapes to reuse in transparent version
+    all_shapes = []
+    
     for clf_info in clf_files:
         try:
             part = CLFFile(clf_info['path'])
@@ -229,6 +235,14 @@ def create_platform_composite_with_folders(clf_files, output_dir, height=1.0, fi
                     if hasattr(shape, 'points'):
                         points = shape.points[0]
                         if isinstance(points, np.ndarray) and points.shape[1] >= 2:
+                            # Store shape data for transparent version
+                            all_shapes.append({
+                                'points': points.copy(),
+                                'color': color,
+                                'folder': folder,
+                                'should_close': should_close_path(points)
+                            })
+                            
                             # Draw shape with folder's color
                             if fill_closed and should_close_path(points):
                                 polygon = Polygon(points, 
@@ -259,7 +273,61 @@ def create_platform_composite_with_folders(clf_files, output_dir, height=1.0, fi
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     save_platform_figure(plt, output_path)
     
+    # Create transparent version
+    create_transparent_composite_folders(all_shapes, output_dir, height, fill_closed)
+    
     return os.path.join("composite_platforms", filename)
+
+
+def create_transparent_composite_folders(shapes, output_dir, height, fill_closed=False):
+    """Create a transparent composite view with paths from all folders without chart elements"""
+    try:
+        # Create figure with transparent background
+        fig = plt.figure(figsize=(15, 15), facecolor="none")
+        ax = plt.gca()
+        ax.set_position([0, 0, 1, 1])  # Remove all margins
+        ax.patch.set_alpha(0)  # Make axes background transparent
+        
+        # Set platform limits
+        plt.xlim(-125, 125)
+        plt.ylim(-125, 125)
+        
+        # Turn off all chart elements
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        plt.axis('off')
+        
+        # Draw all shapes
+        for shape in shapes:
+            points = shape['points']
+            color = shape['color']
+            
+            if fill_closed and shape['should_close']:
+                polygon = Polygon(points, 
+                              facecolor=color, 
+                              edgecolor=color, 
+                              alpha=0.5)
+                plt.gca().add_patch(polygon)
+            else:
+                draw_shape(plt, points, color)
+        
+        plt.axis('equal')  # Ensure perfect square
+        
+        # Save the transparent plot
+        filename = f'transparent_composite_folders_{height}mm.png'
+        output_path = os.path.join(output_dir, "composite_platforms", filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Created transparent composite folders view at: {output_path}")
+        return os.path.join("composite_platforms", filename)
+        
+    except Exception as e:
+        print(f"Error creating transparent composite folders view: {str(e)}")
+        return None
 
 
 def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=False):
@@ -415,6 +483,154 @@ def process_layer_data(clf_info, height, colors):
     return shape_data_list
 
 
+def create_transparent_paths_view(shapes_by_identifier, output_dir):
+    """Create a transparent PNG with just the path data from all identifiers, without any chart elements."""
+    try:
+        # Skip the 'no_identifier' key if it exists
+        identifiers = [id for id in shapes_by_identifier.keys() if id != 'no_identifier']
+        
+        if not identifiers:
+            print("No identifiers found for transparent paths view")
+            return None
+            
+        # Generate a color for each identifier
+        colors = plt.cm.tab10(np.linspace(0, 1, len(identifiers)))
+        identifier_colors = dict(zip(identifiers, colors))
+        
+        # Create figure with transparent background
+        fig = plt.figure(figsize=(15, 15), facecolor="none")
+        ax = plt.gca()
+        ax.set_position([0, 0, 1, 1])  # Remove all margins
+        ax.patch.set_alpha(0)  # Make axes background transparent
+        
+        # Set platform limits
+        plt.xlim(-125, 125)
+        plt.ylim(-125, 125)
+        
+        # Turn off all chart elements
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        plt.axis('off')
+        
+        # Plot each identifier with its assigned color
+        for identifier, color in identifier_colors.items():
+            shapes_data = shapes_by_identifier[identifier]
+            
+            # Draw all shapes for this identifier
+            for shape_info in shapes_data['shapes']:
+                if shape_info['points'] is not None:
+                    points = shape_info['points']
+                    if shape_info['type'] == 'point':
+                        plt.plot(points[0, 0], points[0, 1], 'o', 
+                                color=color, markersize=2, alpha=0.7)
+                    else:
+                        draw_shape(plt, points, color)
+                elif shape_info['type'] == 'circle':
+                    circle = plt.Circle(
+                        shape_info['center'], 
+                        shape_info['radius'], 
+                        color=color, 
+                        fill=False, 
+                        alpha=0.7
+                    )
+                    plt.gca().add_artist(circle)
+        
+        plt.axis('equal')  # Ensure perfect square
+        
+        # Save the transparent plot
+        identifier_dir = os.path.join(output_dir, "identifier_views")
+        os.makedirs(identifier_dir, exist_ok=True)
+        filename = f'transparent_all_pathdata.png'
+        output_path = os.path.join(identifier_dir, filename)
+        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
+        plt.close()
+        
+        # ALSO create a 2500x2500 version
+        create_transparent_paths_view_2500px(shapes_by_identifier, output_dir)
+        
+        print(f"Created transparent paths view at: {output_path}")
+        return os.path.join("identifier_views", filename)
+        
+    except Exception as e:
+        print(f"Error creating transparent paths view: {str(e)}")
+        return None
+        
+
+def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
+    """Create a 2500x2500 transparent PNG with just the path data from all identifiers, without chart elements."""
+    try:
+        # Skip the 'no_identifier' key if it exists
+        identifiers = [id for id in shapes_by_identifier.keys() if id != 'no_identifier']
+        
+        if not identifiers:
+            print("No identifiers found for 2500px transparent paths view")
+            return None
+            
+        # Generate a color for each identifier
+        colors = plt.cm.tab10(np.linspace(0, 1, len(identifiers)))
+        identifier_colors = dict(zip(identifiers, colors))
+        
+        # Create figure with transparent background - size adjusted for 2500px output
+        # 8.33 inches * 300 DPI = ~2500px
+        fig = plt.figure(figsize=(8.33, 8.33), facecolor="none")
+        ax = plt.gca()
+        ax.set_position([0, 0, 1, 1])  # Remove all margins
+        ax.patch.set_alpha(0)  # Make axes background transparent
+        
+        # Set platform limits - still representing the same 250mm x 250mm area
+        plt.xlim(-125, 125)
+        plt.ylim(-125, 125)
+        
+        # Turn off all chart elements
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        plt.axis('off')
+        
+        # Plot each identifier with its assigned color
+        for identifier, color in identifier_colors.items():
+            shapes_data = shapes_by_identifier[identifier]
+            
+            # Draw all shapes for this identifier
+            for shape_info in shapes_data['shapes']:
+                if shape_info['points'] is not None:
+                    points = shape_info['points']
+                    if shape_info['type'] == 'point':
+                        plt.plot(points[0, 0], points[0, 1], 'o', 
+                                color=color, markersize=2, alpha=0.7)
+                    else:
+                        draw_shape(plt, points, color)
+                elif shape_info['type'] == 'circle':
+                    circle = plt.Circle(
+                        shape_info['center'], 
+                        shape_info['radius'], 
+                        color=color, 
+                        fill=False, 
+                        alpha=0.7
+                    )
+                    plt.gca().add_artist(circle)
+        
+        plt.axis('equal')  # Ensure perfect square
+        
+        # Save the transparent plot
+        identifier_dir = os.path.join(output_dir, "identifier_views")
+        os.makedirs(identifier_dir, exist_ok=True)
+        filename = f'transparent_all_pathdata_250mmx250mm_2500px.png'
+        output_path = os.path.join(identifier_dir, filename)
+        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Created 2500px transparent paths view at: {output_path}")
+        return os.path.join("identifier_views", filename)
+        
+    except Exception as e:
+        print(f"Error creating 2500px transparent paths view: {str(e)}")
+        return None
+
+
 def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, alignment_style_only=False, save_clean_png=True):
     """Create a clean platform view without any chart elements, just shapes, and save raw path data.
     Uses multiprocessing to speed up processing of multiple files."""
@@ -430,8 +646,10 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
     }
     
     # Set up multiprocessing pool
-    # Use min of CPU count and number of files to avoid creating too many processes
-    num_processes = min(os.cpu_count(), len(clf_files))
+    # Use a limited number of processes for the inner pool to avoid overloading the system
+    # since there may be an outer multiprocessing pool already running
+    max_file_processes = 4  # Limit to avoid system overload with nested parallelism
+    num_processes = min(max_file_processes, len(clf_files))
     print(f"Processing layer at height {height}mm using {num_processes} parallel processes...")
     
     # Process all CLF files in parallel
