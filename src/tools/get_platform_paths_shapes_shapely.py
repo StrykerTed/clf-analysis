@@ -87,6 +87,14 @@ def process_height(args):
 
 
 def main():
+    # Clear the terminal screen based on OS
+    import platform
+    import os
+    if platform.system() == "Windows":
+        os.system('cls')
+    else:  # For Mac and Linux
+        os.system('clear')
+        
     wanted_layer_heights = list(range(1, 201, 5))
     
     # Use config.py for project paths
@@ -98,7 +106,8 @@ def main():
     print(f"Project root: {project_root}")
 
     logger, log_queue, listener = setup_logging(project_root)
-    abp_file = "/Users/ted.tedford/Library/CloudStorage/OneDrive-Stryker/EBM4/preprocess build-411821.abp"
+    abp_file = "/Users/ted.tedford/Documents/MIDAS/LATESTMIDAS/431627/build-431627.abp"
+
 
     logger.info(f"Processing ABP file: {abp_file}")
     
