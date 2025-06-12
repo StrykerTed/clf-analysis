@@ -40,6 +40,7 @@ from utils.myfuncs.logging_utils import setup_logging
 # Import new modularized functions
 from utils.platform_analysis.visualization_utils import (
     create_combined_identifier_platform_view,
+    create_combined_excluded_identifier_platform_view,
     create_non_identifier_platform_view,
     create_identifier_platform_view,
     create_platform_composite_with_folders, 
@@ -123,6 +124,7 @@ def main():
         save_clean = 'y'
         save_clean_png = False
         alignment_style_only = False
+        draw_excluded = input("Draw excluded paths view? (y/n): ").lower().strip() == 'y'
         
         logger.info("Configuration parameters:")
         logger.info(f"  - Draw Points: {draw_points}")
@@ -133,6 +135,7 @@ def main():
         logger.info(f"  - Save Clean Platforms: {save_clean}")
         logger.info(f"  - Save Clean PNG: {save_clean_png}")
         logger.info(f"  - Alignment Style Only: {alignment_style_only}")
+        logger.info(f"  - Draw Excluded Paths: {draw_excluded}")
 
         # Only ask for height mode if saving clean platforms
         clean_heights = None
@@ -194,6 +197,11 @@ def main():
         shapes_by_identifier = {}
         closed_paths_found = {}
         
+        # Add dictionaries for excluded paths
+        excluded_shapes_by_identifier = {}
+        excluded_file_identifier_counts = {}
+        excluded_closed_paths_found = {}
+        
         platform_info = {
             "files_analyzed": [],
             "layers": [],
@@ -210,41 +218,72 @@ def main():
             }
         }
         
-        # Process each CLF file
-        for clf_info in clf_files:
+        # Process each CLF file (both included and excluded for analysis)
+        all_files_to_process = all_clf_files if draw_excluded else clf_files
+        
+        # Track excluded files for reporting
+        excluded_files_details = []
+        
+        for clf_info in all_files_to_process:
             try:
-                if should_skip_folder(clf_info['folder'], exclusion_patterns):
-                    print(f"WARNING: Skipping incorrectly included file: {clf_info['name']} in {clf_info['folder']}")
+                is_excluded = should_skip_folder(clf_info['folder'], exclusion_patterns) if exclude_folders else False
+                
+                if is_excluded and not draw_excluded:
                     continue
+                elif not is_excluded:
+                    # Process included files normally
+                    print(f"\nProcessing: {clf_info['name']} in {clf_info['folder']}")
+                    part = CLFFile(clf_info['path'])
                     
-                print(f"\nProcessing: {clf_info['name']} in {clf_info['folder']}")
-                part = CLFFile(clf_info['path'])
-                
-                file_info = {
-                    "filename": clf_info['name'],
-                    "folder": clf_info['folder'],
-                    "num_layers": part.nlayers,
-                    "z_range": [part.box.min[2], part.box.max[2]] if hasattr(part, 'box') else None,
-                    "bounds": {
-                        "x_range": [float(part.box.min[0]), float(part.box.max[0])] if hasattr(part, 'box') else None,
-                        "y_range": [float(part.box.min[1]), float(part.box.max[1])] if hasattr(part, 'box') else None,
-                        "z_range": [float(part.box.min[2]), float(part.box.max[2])] if hasattr(part, 'box') else None
+                    file_info = {
+                        "filename": clf_info['name'],
+                        "folder": clf_info['folder'],
+                        "num_layers": part.nlayers,
+                        "z_range": [part.box.min[2], part.box.max[2]] if hasattr(part, 'box') else None,
+                        "bounds": {
+                            "x_range": [float(part.box.min[0]), float(part.box.max[0])] if hasattr(part, 'box') else None,
+                            "y_range": [float(part.box.min[1]), float(part.box.max[1])] if hasattr(part, 'box') else None,
+                            "z_range": [float(part.box.min[2]), float(part.box.max[2])] if hasattr(part, 'box') else None
+                        }
                     }
-                }
-                platform_info["files_analyzed"].append(file_info)
-                
-                if hasattr(part, 'box'):
-                    heights = np.linspace(part.box.min[2], part.box.max[2], 7)
-                    for height in heights:
-                        # print(f"  Analyzing layer at height {height:.3f}mm")
-                        layer_info = analyze_layer(part, height, output_dir, clf_info, 
-                                                path_counts, shape_types, file_identifier_counts,
-                                                shapes_by_identifier,
-                                                draw_points=draw_points, 
-                                                draw_lines=draw_lines,
-                                                save_layer_partials=save_layer_partials)
-                        if isinstance(layer_info, dict):
-                            platform_info["layers"].append(layer_info)
+                    platform_info["files_analyzed"].append(file_info)
+                    
+                    if hasattr(part, 'box'):
+                        heights = np.linspace(part.box.min[2], part.box.max[2], 7)
+                        for height in heights:
+                            layer_info = analyze_layer(part, height, output_dir, clf_info, 
+                                                    path_counts, shape_types, file_identifier_counts,
+                                                    shapes_by_identifier,
+                                                    draw_points=draw_points, 
+                                                    draw_lines=draw_lines,
+                                                    save_layer_partials=save_layer_partials)
+                            if isinstance(layer_info, dict):
+                                platform_info["layers"].append(layer_info)
+                elif is_excluded and draw_excluded:
+                    # Process excluded files for excluded view
+                    print(f"\nProcessing EXCLUDED: {clf_info['name']} in {clf_info['folder']}")
+                    part = CLFFile(clf_info['path'])
+                    
+                    # Track excluded file details
+                    excluded_file_detail = {
+                        "filename": clf_info['name'],
+                        "folder": clf_info['folder'],
+                        "full_path": clf_info['path'],
+                        "num_layers": part.nlayers if hasattr(part, 'nlayers') else 0,
+                        "matching_patterns": [pattern for pattern in exclusion_patterns if pattern in clf_info['folder']]
+                    }
+                    excluded_files_details.append(excluded_file_detail)
+                    
+                    if hasattr(part, 'box'):
+                        heights = np.linspace(part.box.min[2], part.box.max[2], 7)
+                        for height in heights:
+                            # Use separate dictionaries for excluded files
+                            analyze_layer(part, height, output_dir, clf_info, 
+                                        {}, {}, excluded_file_identifier_counts,
+                                        excluded_shapes_by_identifier,
+                                        draw_points=draw_points, 
+                                        draw_lines=draw_lines,
+                                        save_layer_partials=False)  # Don't save partials for excluded
                 
             except Exception as e:
                 print(f"Error processing {clf_info['name']}: {str(e)}")
@@ -322,6 +361,65 @@ def main():
             }
             print(f"Created combined identifier view with {platform_info['combined_identifier_view']['total_identifiers']} identifiers")
 
+        # Create combined view of excluded identifiers if requested
+        if draw_excluded and excluded_shapes_by_identifier:
+            print("\nGenerating combined EXCLUDED identifier platform view...")
+            excluded_combined_view_file = create_combined_excluded_identifier_platform_view(excluded_shapes_by_identifier, output_dir)
+            if excluded_combined_view_file:
+                platform_info["combined_excluded_identifier_view"] = {
+                    "filename": excluded_combined_view_file,
+                    "total_identifiers": len([id for id in excluded_shapes_by_identifier.keys() if id != 'no_identifier'])
+                }
+                print(f"Created combined EXCLUDED identifier view with {platform_info['combined_excluded_identifier_view']['total_identifiers']} identifiers")
+
+        # Create exclusion details file if requested
+        if draw_excluded and excluded_files_details:
+            print("\nCreating exclusion details file...")
+            import csv
+            
+            # Create CSV file
+            csv_filename = "excluded_files_details.csv"
+            csv_path = os.path.join(output_dir, csv_filename)
+            
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                fieldnames = ['filename', 'folder', 'full_path', 'num_layers', 'matching_patterns']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                
+                writer.writeheader()
+                for detail in excluded_files_details:
+                    # Convert list to string for CSV
+                    detail_copy = detail.copy()
+                    detail_copy['matching_patterns'] = ', '.join(detail['matching_patterns'])
+                    writer.writerow(detail_copy)
+            
+            # Create TXT file
+            txt_filename = "excluded_files_details.txt"
+            txt_path = os.path.join(output_dir, txt_filename)
+            
+            with open(txt_path, 'w', encoding='utf-8') as txtfile:
+                txtfile.write("EXCLUDED FILES DETAILS\n")
+                txtfile.write("=" * 50 + "\n\n")
+                txtfile.write(f"Total excluded files: {len(excluded_files_details)}\n")
+                txtfile.write(f"Exclusion patterns used: {', '.join(exclusion_patterns)}\n\n")
+                
+                for i, detail in enumerate(excluded_files_details, 1):
+                    txtfile.write(f"{i}. {detail['filename']}\n")
+                    txtfile.write(f"   Folder: {detail['folder']}\n")
+                    txtfile.write(f"   Full Path: {detail['full_path']}\n")
+                    txtfile.write(f"   Number of Layers: {detail['num_layers']}\n")
+                    txtfile.write(f"   Matching Patterns: {', '.join(detail['matching_patterns'])}\n")
+                    txtfile.write("-" * 40 + "\n\n")
+            
+            platform_info["exclusion_details_files"] = {
+                "csv_file": csv_filename,
+                "txt_file": txt_filename,
+                "total_excluded": len(excluded_files_details)
+            }
+            
+            print(f"Created exclusion details CSV: {csv_path}")
+            print(f"Created exclusion details TXT: {txt_path}")
+            print(f"Total excluded files documented: {len(excluded_files_details)}")
+
         # Print summary information
         print_identifier_summary(platform_info["file_identifier_summary"], closed_paths_found)
         
@@ -352,26 +450,30 @@ def main():
             else:
                 clean_heights = wanted_layer_heights
                 print(f"Processing sample layers: {clean_heights}")
-            for height in clean_heights:
-                try:
-                    print(f"Processing height {height}mm...")
-                    clean_file = create_clean_platform(
-                        clf_files, 
-                        output_dir,
-                        height=height,
-                        fill_closed=fill_closed,
-                        alignment_style_only=alignment_style_only,
-                        save_clean_png=True
-                    )
-
-                    if save_clean_png and clean_file:
-                        platform_info["clean_platforms"].append({
-                            "height": height,
-                            "filename": clean_file
-                        })
-                        print(f"Created clean platform at {height}mm: {clean_file}")
-                except Exception as e:
-                    print(f"Error creating clean platform at height {height}mm: {str(e)}")
+            
+            # Use multiprocessing for height processing
+            height_args = [
+                (height, clf_files, output_dir, fill_closed, alignment_style_only, True)
+                for height in clean_heights
+            ]
+            
+            # Use multiprocessing to process heights in parallel
+            num_height_processes = min(multiprocessing.cpu_count(), len(clean_heights))
+            print(f"Processing {len(clean_heights)} heights using {num_height_processes} parallel processes...")
+            
+            with Pool(processes=num_height_processes) as pool:
+                results = pool.map(process_height, height_args)
+            
+            # Process results
+            for result in results:
+                if result.get("success") and result.get("filename"):
+                    platform_info["clean_platforms"].append({
+                        "height": result["height"],
+                        "filename": result["filename"]
+                    })
+                    print(f"Created clean platform at {result['height']}mm: {result['filename']}")
+                elif not result.get("success"):
+                    print(f"Failed to create clean platform at {result['height']}mm")
         
         # Add closed paths information to final JSON
         platform_info["closed_paths_summary"] = closed_paths_found

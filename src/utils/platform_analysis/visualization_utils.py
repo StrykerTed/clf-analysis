@@ -1,6 +1,8 @@
 import os
-import numpy as np
-import matplotlib.pyplot as plt
+import sys
+import matplotlib.pyplot as plt   
+import numpy as np   
+import json
 from matplotlib.patches import Polygon
 
 from utils.myfuncs.plotTools import (
@@ -16,6 +18,93 @@ from utils.myfuncs.plotTools import (
 from utils.myfuncs.print_utils import add_platform_labels
 from utils.myfuncs.shape_things import should_close_path
 from utils.pyarcam.clfutil import CLFFile
+
+
+def create_combined_excluded_identifier_platform_view(excluded_shapes_by_identifier, output_dir):
+    """Create a combined platform view showing all excluded identifiers with unique colors"""
+    try:
+        # Skip the 'no_identifier' key if it exists
+        identifiers = [id for id in excluded_shapes_by_identifier.keys() if id != 'no_identifier']
+        
+        if not identifiers:
+            print("No excluded identifiers found for combined view")
+            return None
+            
+        # Generate a color for each identifier
+        colors = plt.cm.tab10(np.linspace(0, 1, len(identifiers)))
+        identifier_colors = dict(zip(identifiers, colors))
+        
+        # Create figure
+        setup_platform_figure()
+        
+        # Add standard platform elements
+        draw_platform_boundary(plt)
+        add_reference_lines(plt)
+        
+        total_shapes = 0
+        height_ranges = []
+        
+        # Plot each identifier with its assigned color
+        for identifier, color in identifier_colors.items():
+            shapes_data = excluded_shapes_by_identifier[identifier]
+            total_shapes += shapes_data['count']
+            height_ranges.append(shapes_data['height_range'])
+            
+            # Draw all shapes for this identifier
+            for shape_info in shapes_data['shapes']:
+                if shape_info['points'] is not None:
+                    points = shape_info['points']
+                    if shape_info['type'] == 'point':
+                        plt.plot(points[0, 0], points[0, 1], 'o', 
+                                color=color, markersize=2, alpha=0.7, 
+                                label=f'ID {identifier}' if identifier not in plt.gca().get_legend_handles_labels()[1] else "")
+                    else:
+                        draw_shape(plt, points, color)
+                        # Add label only once per identifier
+                        if identifier not in [t.get_text().split()[-1] for t in plt.gca().get_legend_handles_labels()[1]]:
+                            plt.plot([], [], color=color, label=f'ID {identifier}')
+                elif shape_info['type'] == 'circle':
+                    circle = plt.Circle(
+                        shape_info['center'], 
+                        shape_info['radius'], 
+                        color=color, 
+                        fill=False, 
+                        alpha=0.7
+                    )
+                    plt.gca().add_artist(circle)
+                    # Add label only once per identifier
+                    if identifier not in [t.get_text().split()[-1] for t in plt.gca().get_legend_handles_labels()[1]]:
+                        plt.plot([], [], color=color, label=f'ID {identifier}')
+        
+        # Calculate overall height range
+        if height_ranges:
+            min_height = min(hr[0] for hr in height_ranges)
+            max_height = max(hr[1] for hr in height_ranges)
+        else:
+            min_height = max_height = 0
+        
+        plt.title(f'Combined EXCLUDED Identifier Platform View\n'
+                 f'Total Identifiers: {len(identifiers)} | Total Shapes: {total_shapes}\n'
+                 f'Height Range: {min_height:.2f}mm to {max_height:.2f}mm')
+        add_platform_labels(plt)
+        set_platform_limits(plt)
+        
+        # Add legend
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+        
+        # Save to identifier_views directory
+        identifier_dir = os.path.join(output_dir, "identifier_views")
+        os.makedirs(identifier_dir, exist_ok=True)
+        filename = f'combined_excluded_identifier_platform_view.png'
+        output_path = os.path.join(identifier_dir, filename)
+        save_platform_figure(plt, output_path)
+        
+        print(f"Created combined excluded identifier view at: {output_path}")
+        return os.path.join("identifier_views", filename)
+        
+    except Exception as e:
+        print(f"Error creating combined excluded identifier platform view: {str(e)}")
+        return None
 
 
 def create_combined_identifier_platform_view(shapes_by_identifier, output_dir):
@@ -644,13 +733,11 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
         'WaferSupport.clf': 'red',
         'Net.clf': 'green'
     }
-    
-    # Set up multiprocessing pool
-    # Use a limited number of processes for the inner pool to avoid overloading the system
-    # since there may be an outer multiprocessing pool already running
-    max_file_processes = 4  # Limit to avoid system overload with nested parallelism
+      # Set up multiprocessing pool
+    # Reduce inner parallelization since we're parallelizing at height level
+    max_file_processes = 2  # Reduced to avoid overloading with nested parallelism
     num_processes = min(max_file_processes, len(clf_files))
-    print(f"Processing layer at height {height}mm using {num_processes} parallel processes...")
+    # Remove the print since it's now handled at the main level
     
     # Process all CLF files in parallel
     with Pool(processes=num_processes) as pool:
@@ -731,10 +818,6 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
         # Construct filename
         data_filename = f'platform_layer_pathdata_{height}mm.json'
         data_output_path = os.path.join(raw_data_dir, data_filename)
-        
-        # Write the data to file
-        print(f"\nWriting shape data to: {data_output_path}")
-        print(f"Number of shapes being written: {len(shape_data_list)}")
         
         with open(data_output_path, 'w') as f:
             json.dump(shape_data_list, f, indent=2)
