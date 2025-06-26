@@ -722,32 +722,25 @@ def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
 
 def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, alignment_style_only=False, save_clean_png=True):
     """Create a clean platform view without any chart elements, just shapes, and save raw path data.
-    Uses multiprocessing to speed up processing of multiple files."""
+    Processes files sequentially to avoid nested multiprocessing conflicts."""
     import os
-    from multiprocessing import Pool
     import json
     
-    # Define colors dictionary outside of the processing function
+    # Define colors dictionary
     colors = {
         'Part.clf': 'blue',
         'WaferSupport.clf': 'red',
         'Net.clf': 'green'
     }
-      # Set up multiprocessing pool
-    # Reduce inner parallelization since we're parallelizing at height level
-    max_file_processes = 2  # Reduced to avoid overloading with nested parallelism
-    num_processes = min(max_file_processes, len(clf_files))
-    # Remove the print since it's now handled at the main level
     
-    # Process all CLF files in parallel
-    with Pool(processes=num_processes) as pool:
-        # Map the processing function to the arguments
-        results = pool.starmap(process_layer_data, [(clf_info, height, colors) for clf_info in clf_files])
-    
-    # Combine all results into a single list
+    # Process all CLF files sequentially (avoiding nested multiprocessing)
     shape_data_list = []
-    for result in results:
-        shape_data_list.extend(result)
+    for clf_info in clf_files:
+        try:
+            result = process_layer_data(clf_info, height, colors)
+            shape_data_list.extend(result)
+        except Exception as e:
+            print(f"Error processing {clf_info['name']} at height {height}mm: {str(e)}")
     
     # Update fill_closed for all shapes
     for shape_data in shape_data_list:
@@ -818,6 +811,10 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
         # Construct filename
         data_filename = f'platform_layer_pathdata_{height}mm.json'
         data_output_path = os.path.join(raw_data_dir, data_filename)
+        
+        # Add debugging information
+        print(f"\nWriting shape data to: {data_output_path}")
+        print(f"Number of shapes being written: {len(shape_data_list)}")
         
         with open(data_output_path, 'w') as f:
             json.dump(shape_data_list, f, indent=2)

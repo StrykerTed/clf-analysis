@@ -107,7 +107,7 @@ def main():
     print(f"Project root: {project_root}")
 
     logger, log_queue, listener = setup_logging(project_root)
-    abp_file = "/Users/ted.tedford/Documents/MIDAS/LATESTMIDAS/431627/build-431627.abp"
+    abp_file = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-424292.abp"
 
 
     logger.info(f"Processing ABP file: {abp_file}")
@@ -124,7 +124,7 @@ def main():
         save_clean = 'y'
         save_clean_png = False
         alignment_style_only = False
-        draw_excluded = input("Draw excluded paths view? (y/n): ").lower().strip() == 'y'
+        draw_excluded = False  # Temporarily disable to avoid blocking multiprocessing
         
         logger.info("Configuration parameters:")
         logger.info(f"  - Draw Points: {draw_points}")
@@ -451,29 +451,31 @@ def main():
                 clean_heights = wanted_layer_heights
                 print(f"Processing sample layers: {clean_heights}")
             
-            # Use multiprocessing for height processing
-            height_args = [
-                (height, clf_files, output_dir, fill_closed, alignment_style_only, True)
-                for height in clean_heights
-            ]
+            # Process heights sequentially to avoid multiprocessing conflicts
+            print(f"Processing {len(clean_heights)} heights sequentially...")
             
-            # Use multiprocessing to process heights in parallel
-            num_height_processes = min(multiprocessing.cpu_count(), len(clean_heights))
-            print(f"Processing {len(clean_heights)} heights using {num_height_processes} parallel processes...")
-            
-            with Pool(processes=num_height_processes) as pool:
-                results = pool.map(process_height, height_args)
-            
-            # Process results
-            for result in results:
-                if result.get("success") and result.get("filename"):
-                    platform_info["clean_platforms"].append({
-                        "height": result["height"],
-                        "filename": result["filename"]
-                    })
-                    print(f"Created clean platform at {result['height']}mm: {result['filename']}")
-                elif not result.get("success"):
-                    print(f"Failed to create clean platform at {result['height']}mm")
+            for height in clean_heights:
+                try:
+                    print(f"Processing height {height}mm...")
+                    clean_file = create_clean_platform(
+                        clf_files, 
+                        output_dir,
+                        height=height,
+                        fill_closed=fill_closed,
+                        alignment_style_only=alignment_style_only,
+                        save_clean_png=True
+                    )
+                    
+                    if clean_file:
+                        platform_info["clean_platforms"].append({
+                            "height": height,
+                            "filename": clean_file
+                        })
+                        print(f"Created clean platform at {height}mm: {clean_file}")
+                    else:
+                        print(f"No clean platform file created for {height}mm (save_clean_png=False)")
+                except Exception as e:
+                    print(f"Error creating clean platform at height {height}mm: {str(e)}")
         
         # Add closed paths information to final JSON
         platform_info["closed_paths_summary"] = closed_paths_found
