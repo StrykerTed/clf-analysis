@@ -14,17 +14,20 @@ A Python toolkit for analyzing and visualizing CLF (Custom Layer Format) files f
 ## 📦 Installation
 
 1. **Clone or navigate to the project directory**
+
    ```bash
    cd clf_analysis_clean
    ```
 
 2. **Create a virtual environment**
+
    ```bash
    python3.11 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
 3. **Install dependencies**
+
    ```bash
    pip install -r requirements.txt
    ```
@@ -37,16 +40,19 @@ A Python toolkit for analyzing and visualizing CLF (Custom Layer Format) files f
 ## 🏃 Quick Start
 
 ### Run Platform Analysis Tool
+
 ```bash
 python src/tools/get_platform_paths_shapes_shapely.py
 ```
 
 ### Run Example Script
+
 ```bash
 python examples/example_clf.py
 ```
 
 ### Run Tests
+
 ```bash
 python -m unittest discover src/tools/tests
 ```
@@ -128,11 +134,13 @@ clf_analysis_clean/
 ## 🔧 Configuration
 
 ### Environment Variables
+
 - **Python Version**: Requires Python 3.11 for compatibility
 - **Virtual Environment**: Always activate venv before development
 - **Port Management**: Default development port is 8080
 
 ### Code Style Guidelines
+
 - Standard library imports first, then third-party, then local modules
 - Module-level logging with `logger = logging.getLogger(__name__)`
 - Snake_case for functions/variables, CamelCase for classes
@@ -152,11 +160,13 @@ clf_analysis_clean/
 ## 🔮 Future Enhancements
 
 1. **Advanced Analytics**
+
    - Machine learning integration for pattern recognition
    - Predictive analysis for build quality
    - Statistical analysis of manufacturing parameters
 
 2. **Visualization Improvements**
+
    - Interactive 3D visualization
    - Real-time analysis dashboards
    - Export capabilities for reports
@@ -169,12 +179,14 @@ clf_analysis_clean/
 ## 🛠️ Development
 
 ### Adding New Analysis Tools
+
 1. Create new tool in `src/tools/` directory
 2. Follow existing code patterns and logging practices
 3. Add corresponding tests in `src/tools/tests/`
 4. Update documentation
 
 ### Performance Optimization
+
 The toolkit uses multiprocessing for CPU-intensive tasks:
 
 ```python
@@ -203,6 +215,7 @@ with Pool(processes=num_processes) as pool:
 ## 🤝 Contributing
 
 Key areas for contribution:
+
 1. Advanced geometric analysis algorithms
 2. Performance optimization
 3. Visualization enhancements
@@ -211,4 +224,8 @@ Key areas for contribution:
 
 ---
 
-**Ready for advanced CLF analysis!** This toolkit provides comprehensive capabilities for Arcam EBM manufacturing data analysis and visualization.
+## Notes
+
+- Always activate venv if not active
+- Use python3
+- Check if server is running on port 8080 before running. Never use another port
