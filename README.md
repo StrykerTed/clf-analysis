@@ -113,3 +113,8 @@ If you encounter issues:
 2. Verify the virtual environment is activated
 3. Confirm all dependencies are installed
 4. Check PyArcam installation
+
+----notes
+always activate venv if not active
+use python3
+check if server is running on port 8080 before running. never use another port
