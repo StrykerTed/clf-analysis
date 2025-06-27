@@ -20,7 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 new_env
-assets/
+*.stl
 preprocess*/
 my_outputs/
 *.pdf
