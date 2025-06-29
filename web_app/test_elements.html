@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JavaScript Test</title>
+</head>
+<body>
+    <div id="builds-grid">Test Container</div>
+    <div id="build-actions" style="display: none;">Actions Container</div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Testing element access...');
+            
+            const container = document.getElementById('builds-grid');
+            const actions = document.getElementById('build-actions');
+            
+            console.log('builds-grid found:', container !== null);
+            console.log('build-actions found:', actions !== null);
+            
+            if (container) {
+                container.innerHTML = 'JavaScript working correctly!';
+                container.style.color = 'green';
+                container.style.fontWeight = 'bold';
+            }
+        });
+    </script>
+</body>
+</html>

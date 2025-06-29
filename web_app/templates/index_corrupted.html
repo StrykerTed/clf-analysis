@@ -2,7 +2,29 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=                        <div class="build-actions" id="build-actions" style="display: none;">
+                            <div class="selected-build-info" id="selected-build-info">
+                                <h4>Selected Build: <span id="selected-build-name">None</span></h4>
+                                <p>Status: <span id="selected-build-status">-</span></p>
+                            </div>
+                            <div class="analysis-controls">
+                                <div class="height-input-group">
+                                    <label for="height-input">Analysis Height (mm):</label>
+                                    <input 
+                                        type="number" 
+                                        id="height-input" 
+                                        class="height-input" 
+                                        min="0" 
+                                        max="9999.99" 
+                                        step="0.01" 
+                                        placeholder="0.00"
+                                        value=""
+                                    >
+                                    <span class="input-unit">mm</span>
+                                </div>
+                                <button class="analyze-btn" id="analyze-btn" disabled>📊 Analyze Build</button>
+                            </div>
+                        </div>width, initial-scale=1.0">
     <title>CLF Analysis Tool</title>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon-48x48.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -57,14 +79,14 @@
                         </div>
                         <div class="status-item">
                             <div class="status-label">CURRENT TIME</div>
-                            <div class="status-value" id="current-time">2025-06-29T16:28:44</div>
+                            <div class="status-value" id="current-time">2025-06-29T14:36:42</div>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Features Section -->
+
+                <!-- Available Features Section -->
                 <div class="features-section">
-                    <h2>⚙️ Available Features</h2>
+                    <h2>� Available Features</h2>
                     <div class="features-grid">
                         <div class="feature-card">
                             <div class="feature-icon">🌐</div>
@@ -88,20 +110,19 @@
                         </div>
                     </div>
                 </div>
-                
-                <!-- ABP Build Selection Section -->
-                <div class="builds-section">
-                    <h2>🏗️ ABP Build Selection</h2>
-                    
-                    <div class="builds-controls">
-                        <div class="builds-header">
+
+                <!-- Build Selection Section -->
+                <div class="build-selection-section">
+                    <h2>🎯 ABP Build Selection</h2>
+                    <div class="build-content">
+                        <div class="build-header">
                             <h3>Select an Available ABP Build</h3>
                             <p>Choose from processed ABP builds to analyze paths and visualizations</p>
                             <button class="refresh-btn" id="refresh-builds">🔄 Refresh Builds</button>
                         </div>
                         
-                        <div class="builds-grid" id="builds-grid">
-                            <div class="loading-state" id="loading-builds">
+                        <div class="builds-container" id="builds-container">
+                            <div class="loading-spinner">
                                 <div class="spinner"></div>
                                 <p>Loading available builds...</p>
                             </div>
@@ -112,44 +133,20 @@
                                 <h4>Selected Build: <span id="selected-build-name">None</span></h4>
                                 <p>Status: <span id="selected-build-status">-</span></p>
                             </div>
-                            <div class="analysis-controls">
-                                <div class="height-input-group">
-                                    <label for="height-input">Analysis Height (mm):</label>
-                                    <input 
-                                        type="number" 
-                                        id="height-input" 
-                                        class="height-input" 
-                                        min="0" 
-                                        max="9999.99" 
-                                        step="0.01" 
-                                        placeholder="0.00"
-                                        value=""
-                                    >
-                                    <span class="input-unit">mm</span>
-                                </div>
-                                <button class="analyze-btn" id="analyze-btn" disabled>📊 Analyze Build</button>
-                            </div>
+                            <button class="analyze-btn" id="analyze-btn" disabled>� Analyze Build</button>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Analysis Results Section -->
-                <div class="results-section" id="results-section" style="display: none;">
-                    <h2>📊 Analysis Results</h2>
-                    <div class="results-content" id="results-content">
-                        <!-- Analysis results will be populated here -->
-                    </div>
-                </div>
-                
-                <!-- Notifications -->
-                <div class="notifications" id="notifications"></div>
             </div>
         </main>
         
         <footer>
             <div class="footer-content">
-                <p>&copy; 2025 Stryker Corporation - Digital R&D Division</p>
-                <p>CLF Analysis Tool v0.1 - Advanced Additive Manufacturing Solutions</p>
+                <p>&copy; 2025 CLF Analysis Tool - Built for the Additive Manufacturing Community</p>
+                <div class="footer-badges">
+                    <span class="footer-badge">Made with Python</span>
+                    <span class="footer-badge">Maintained</span>
+                </div>
             </div>
         </footer>
     </div>

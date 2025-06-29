@@ -21,8 +21,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Load available builds on page load
-    loadAvailableBuilds();
+    // Load available builds on page load (with small delay to ensure DOM is ready)
+    setTimeout(() => {
+        loadAvailableBuilds();
+    }, 100);
 });
 
 // Real-time clock update
@@ -186,8 +188,19 @@ function updateAnalyzeButtonState() {
 
 // Load available builds from the API
 function loadAvailableBuilds() {
-    const container = document.getElementById('builds-container');
+    const container = document.getElementById('builds-grid');
     const actions = document.getElementById('build-actions');
+    
+    // Safety check for DOM elements
+    if (!container) {
+        console.error('builds-grid element not found');
+        return;
+    }
+    
+    if (!actions) {
+        console.error('build-actions element not found');
+        return;
+    }
     
     // Show loading spinner
     container.innerHTML = `
@@ -220,7 +233,13 @@ function loadAvailableBuilds() {
 
 // Display builds in the container
 function displayBuilds(builds) {
-    const container = document.getElementById('builds-container');
+    const container = document.getElementById('builds-grid');
+    
+    // Safety check
+    if (!container) {
+        console.error('builds-grid element not found');
+        return;
+    }
     
     if (builds.length === 0) {
         container.innerHTML = `
@@ -360,7 +379,14 @@ function updateAnalysisStatus(buildNumber, height) {
 
 // Display error message
 function displayError(message) {
-    const container = document.getElementById('builds-container');
+    const container = document.getElementById('builds-grid');
+    
+    // Safety check
+    if (!container) {
+        console.error('builds-grid element not found');
+        return;
+    }
+    
     container.innerHTML = `
         <div class="error-message">
             <h4>Error Loading Builds</h4>
