@@ -423,9 +423,9 @@ main {
     border-top: 1px solid #dee2e6;
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-end;
     flex-wrap: wrap;
-    gap: 15px;
+    gap: 20px;
 }
 
 .selected-build-info h4 {
@@ -440,6 +440,68 @@ main {
     font-size: 0.9rem;
 }
 
+.analysis-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.height-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.height-input-group label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 4px;
+}
+
+.height-input {
+    width: 120px;
+    padding: 10px 12px;
+    border: 2px solid #dee2e6;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 500;
+    text-align: center;
+    transition: border-color 0.2s ease;
+    background: white;
+}
+
+.height-input:focus {
+    outline: none;
+    border-color: #f39c12;
+    box-shadow: 0 0 0 3px rgba(243, 156, 18, 0.1);
+}
+
+.height-input:invalid {
+    border-color: #dc3545;
+}
+
+.height-input::placeholder {
+    color: #adb5bd;
+    font-weight: 400;
+}
+
+.input-unit {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #666;
+    font-size: 0.9rem;
+    font-weight: 500;
+    pointer-events: none;
+}
+
+.height-input-group {
+    position: relative;
+}
+
 .analyze-btn {
     background: #f39c12;
     color: white;
@@ -450,6 +512,7 @@ main {
     cursor: pointer;
     transition: background 0.2s ease;
     font-weight: 500;
+    height: fit-content;
 }
 
 .analyze-btn:hover:not(:disabled) {
@@ -566,6 +629,26 @@ footer {
         font-size: 0.8rem;
         padding: 6px 12px;
     }
+    
+    .build-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 15px;
+    }
+    
+    .analysis-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 15px;
+    }
+    
+    .height-input {
+        width: 100%;
+    }
+    
+    .analyze-btn {
+        width: 100%;
+    }
 }
 
 @media (max-width: 480px) {
@@ -576,4 +659,15 @@ footer {
     .viz-placeholder {
         padding: 40px 15px;
     }
+}
+
+/* Input validation styles */
+.height-input.invalid {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+}
+
+.height-input.invalid:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.2);
 }

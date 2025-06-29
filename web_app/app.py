@@ -1,6 +1,7 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import os
 import re
+import time
 from pathlib import Path
 
 app = Flask(__name__)
@@ -65,30 +66,45 @@ def get_available_builds():
             'count': 0
         }), 500
 
-@app.route('/api/builds/<build_number>/analyze')
+@app.route('/api/builds/<build_number>/analyze', methods=['POST'])
 def analyze_build(build_number):
-    """Analyze a specific build (placeholder for future implementation)"""
+    """Analyze a specific build with height parameter"""
     try:
+        # Get JSON data from request
+        data = request.get_json() if request.is_json else {}
+        height_mm = data.get('height_mm', 0)
+        build_folder = data.get('build_folder', '')
+        
+        # Validate height
+        if not isinstance(height_mm, (int, float)) or height_mm < 0 or height_mm > 9999.99:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid height value. Must be between 0 and 9999.99 mm'
+            }), 400
+        
         # Find the build folder
-        build_folder = None
+        actual_build_folder = None
         if os.path.exists(ABP_CONTENTS_PATH):
             for folder in os.listdir(ABP_CONTENTS_PATH):
                 if f'build' in folder.lower() and build_number in folder:
-                    build_folder = folder
+                    actual_build_folder = folder
                     break
         
-        if not build_folder:
+        if not actual_build_folder:
             return jsonify({
                 'status': 'error',
                 'message': f'Build {build_number} not found'
             }), 404
         
-        # Placeholder response
+        # Here you would integrate your actual CLF analysis code
+        # For now, this is a placeholder response
         return jsonify({
             'status': 'success',
             'message': f'Analysis started for Build {build_number}',
-            'build_folder': build_folder,
-            'build_number': build_number
+            'build_folder': actual_build_folder,
+            'build_number': build_number,
+            'height_mm': height_mm,
+            'analysis_id': f"{build_number}_{height_mm}_{int(time.time())}"
         })
         
     except Exception as e:

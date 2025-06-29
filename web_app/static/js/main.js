@@ -62,6 +62,7 @@ function initializeFeatureCards() {
 function initializeBuildSelection() {
     const refreshBtn = document.getElementById('refresh-builds');
     const analyzeBtn = document.getElementById('analyze-btn');
+    const heightInput = document.getElementById('height-input');
     
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function() {
@@ -72,10 +73,115 @@ function initializeBuildSelection() {
     if (analyzeBtn) {
         analyzeBtn.addEventListener('click', function() {
             if (selectedBuild) {
-                analyzeBuild(selectedBuild);
+                const height = getValidatedHeight();
+                if (height !== null) {
+                    analyzeBuild(selectedBuild, height);
+                }
             }
         });
     }
+    
+    if (heightInput) {
+        // Add input validation and formatting
+        heightInput.addEventListener('input', function() {
+            validateHeightInput();
+            updateAnalyzeButtonState();
+        });
+        
+        heightInput.addEventListener('blur', function() {
+            formatHeightInput();
+        });
+        
+        // Allow Enter key to trigger analysis
+        heightInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !analyzeBtn.disabled) {
+                analyzeBtn.click();
+            }
+        });
+    }
+}
+
+// Validate height input in real-time
+function validateHeightInput() {
+    const heightInput = document.getElementById('height-input');
+    if (!heightInput) return;
+    
+    const value = heightInput.value;
+    const numValue = parseFloat(value);
+    
+    // Remove invalid class first
+    heightInput.classList.remove('invalid');
+    
+    // Check if value is valid
+    if (value && (isNaN(numValue) || numValue < 0 || numValue > 9999.99)) {
+        heightInput.classList.add('invalid');
+        return false;
+    }
+    
+    return true;
+}
+
+// Format height input on blur
+function formatHeightInput() {
+    const heightInput = document.getElementById('height-input');
+    if (!heightInput) return;
+    
+    const value = heightInput.value.trim();
+    if (value && !isNaN(parseFloat(value))) {
+        const numValue = parseFloat(value);
+        if (numValue >= 0 && numValue <= 9999.99) {
+            heightInput.value = numValue.toFixed(2);
+        }
+    }
+}
+
+// Get validated height value
+function getValidatedHeight() {
+    const heightInput = document.getElementById('height-input');
+    if (!heightInput) return null;
+    
+    const value = heightInput.value.trim();
+    
+    if (!value) {
+        showNotification('Please enter a height value for analysis', 'warning');
+        heightInput.focus();
+        return null;
+    }
+    
+    const numValue = parseFloat(value);
+    
+    if (isNaN(numValue)) {
+        showNotification('Please enter a valid numeric height value', 'error');
+        heightInput.focus();
+        return null;
+    }
+    
+    if (numValue < 0) {
+        showNotification('Height cannot be negative', 'error');
+        heightInput.focus();
+        return null;
+    }
+    
+    if (numValue > 9999.99) {
+        showNotification('Height cannot exceed 9999.99 mm', 'error');
+        heightInput.focus();
+        return null;
+    }
+    
+    return numValue;
+}
+
+// Update analyze button state based on inputs
+function updateAnalyzeButtonState() {
+    const analyzeBtn = document.getElementById('analyze-btn');
+    const heightInput = document.getElementById('height-input');
+    
+    if (!analyzeBtn || !heightInput) return;
+    
+    const hasSelectedBuild = selectedBuild !== null;
+    const hasValidHeight = heightInput.value.trim() !== '' && validateHeightInput();
+    
+    analyzeBtn.disabled = !(hasSelectedBuild && hasValidHeight);
 }
 
 // Load available builds from the API
@@ -187,37 +293,49 @@ function selectBuild(build, cardElement) {
     const actions = document.getElementById('build-actions');
     const buildName = document.getElementById('selected-build-name');
     const buildStatus = document.getElementById('selected-build-status');
-    const analyzeBtn = document.getElementById('analyze-btn');
+    const heightInput = document.getElementById('height-input');
     
     if (buildName) buildName.textContent = `Build ${build.build_number}`;
     if (buildStatus) buildStatus.textContent = build.status;
     
-    if (analyzeBtn) {
-        analyzeBtn.disabled = false;
+    // Clear height input and focus it
+    if (heightInput) {
+        heightInput.value = '';
+        setTimeout(() => heightInput.focus(), 100);
     }
+    
+    // Update analyze button state
+    updateAnalyzeButtonState();
     
     actions.style.display = 'flex';
     
-    showNotification(`Selected Build ${build.build_number}`, 'info');
+    showNotification(`Selected Build ${build.build_number} - Enter analysis height`, 'info');
 }
 
 // Analyze selected build
-function analyzeBuild(build) {
-    if (!build) return;
+function analyzeBuild(build, height) {
+    if (!build || height === null || height === undefined) return;
     
-    showNotification(`Starting analysis of Build ${build.build_number}...`, 'info');
+    showNotification(`Starting analysis of Build ${build.build_number} at height ${height}mm...`, 'info');
+    
+    const requestData = {
+        build_number: build.build_number,
+        height_mm: height,
+        build_folder: build.folder_name
+    };
     
     fetch(`/api/builds/${build.build_number}/analyze`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-        }
+        },
+        body: JSON.stringify(requestData)
     })
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                showNotification(data.message, 'success');
-                updateAnalysisStatus(build.build_number);
+                showNotification(`${data.message} (Height: ${height}mm)`, 'success');
+                updateAnalysisStatus(build.build_number, height);
             } else {
                 showNotification(`Analysis failed: ${data.message}`, 'error');
             }
@@ -229,12 +347,15 @@ function analyzeBuild(build) {
 }
 
 // Update analysis status
-function updateAnalysisStatus(buildNumber) {
+function updateAnalysisStatus(buildNumber, height) {
     const clfStatus = document.querySelector('.status-grid .status-item:nth-child(3) .status-value');
     if (clfStatus) {
         clfStatus.textContent = 'ANALYZING';
         clfStatus.className = 'status-value status-running';
     }
+    
+    // You could also update with more specific status
+    showNotification(`Analyzing Build ${buildNumber} at ${height}mm height`, 'info');
 }
 
 // Display error message

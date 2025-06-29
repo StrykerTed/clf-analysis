@@ -1,0 +1,2 @@
+always use port 5000. if that port is in use, cancel the process and then use 5000. 
+always use venv
