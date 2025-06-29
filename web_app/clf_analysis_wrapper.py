@@ -40,7 +40,7 @@ class CLFWebAnalyzer:
         self.project_root = PROJECT_ROOT
         self.config_dir = os.path.join(self.project_root, "config")
         
-    def analyze_build(self, build_folder_path, height_mm, exclude_folders=True):
+    def analyze_build(self, build_folder_path, height_mm, exclude_folders=True, identifiers=None):
         """
         Analyze a build at specified height and return visualization data
         
@@ -48,6 +48,7 @@ class CLFWebAnalyzer:
             build_folder_path: Path to the build folder
             height_mm: Height in millimeters to analyze
             exclude_folders: Whether to exclude folders based on patterns
+            identifiers: List of specific identifier numbers to analyze, or None for all
             
         Returns:
             dict with analysis results and visualization paths
@@ -55,6 +56,8 @@ class CLFWebAnalyzer:
         try:
             print(f"Starting CLF analysis for build: {build_folder_path}")
             print(f"Analysis height: {height_mm}mm")
+            if identifiers:
+                print(f"Filtering to identifiers: {identifiers}")
             
             # Validate inputs
             if not os.path.exists(build_folder_path):
@@ -118,14 +121,26 @@ class CLFWebAnalyzer:
             print(f"Generating clean platform visualization at {height_mm}mm...")
             try:
                 # Create the visualization using existing utilities
-                clean_file = create_clean_platform(
-                    clf_files, 
-                    temp_dir,
-                    height=height_mm,
-                    fill_closed=True,  # Fill closed shapes for better visualization
-                    alignment_style_only=False,
-                    save_clean_png=True
-                )
+                if identifiers is not None:
+                    # Use custom visualization with identifier filtering
+                    clean_file = self.create_filtered_clean_platform(
+                        clf_files, 
+                        temp_dir,
+                        height=height_mm,
+                        identifiers=identifiers,
+                        fill_closed=True,
+                        save_clean_png=True
+                    )
+                else:
+                    # Use standard visualization for all identifiers
+                    clean_file = create_clean_platform(
+                        clf_files, 
+                        temp_dir,
+                        height=height_mm,
+                        fill_closed=True,  # Fill closed shapes for better visualization
+                        alignment_style_only=False,
+                        save_clean_png=True
+                    )
                 
                 if clean_file:
                     # Convert relative path to absolute
@@ -214,9 +229,206 @@ class CLFWebAnalyzer:
                 print(f"Cleaned up temporary directory: {temp_directory}")
         except Exception as e:
             print(f"Warning: Could not clean up temp directory {temp_directory}: {e}")
+    
+    def create_filtered_clean_platform(self, clf_files, output_dir, height=1.0, identifiers=None, 
+                                     fill_closed=False, save_clean_png=True):
+        """
+        Create a clean platform view filtered by specific identifiers
+        
+        Args:
+            clf_files: List of CLF file info dictionaries
+            output_dir: Output directory for visualization
+            height: Height in mm to analyze
+            identifiers: List of identifier numbers to include (strings or ints)
+            fill_closed: Whether to fill closed shapes
+            save_clean_png: Whether to save PNG output
+            
+        Returns:
+            Path to generated PNG file or None
+        """
+        import json
+        import numpy as np
+        from utils.myfuncs.shape_things import should_close_path
+        
+        print(f"Creating filtered platform view for identifiers: {identifiers}")
+        
+        # Convert identifiers to strings for consistent comparison
+        if identifiers is not None:
+            identifier_strings = [str(id_val).strip() for id_val in identifiers if str(id_val).strip()]
+            print(f"Normalized identifiers for filtering: {identifier_strings}")
+        else:
+            identifier_strings = None
+        
+        # Define colors dictionary
+        colors = {
+            'Part.clf': 'blue',
+            'WaferSupport.clf': 'red',
+            'Net.clf': 'green'
+        }
+        
+        # Process all CLF files and collect shape data
+        all_shape_data = []
+        filtered_shape_data = []
+        
+        for clf_info in clf_files:
+            try:
+                part = CLFFile(clf_info['path'])
+                if not hasattr(part, 'box'):
+                    continue
+                    
+                layer = part.find(height)
+                if layer is None:
+                    continue
+                    
+                if hasattr(layer, 'shapes'):
+                    for shape in layer.shapes:
+                        color = colors.get(clf_info['name'], 'gray')
+                        
+                        # Extract shape identifier if it exists
+                        shape_identifier = None
+                        if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
+                            shape_identifier = str(shape.model.id).strip()
+                        
+                        # Process shape points
+                        if hasattr(shape, 'points') and shape.points:
+                            points = shape.points[0]
+                            if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
+                                should_close = False
+                                try:
+                                    should_close = should_close_path(points)
+                                    if hasattr(should_close, 'item'):
+                                        should_close = should_close.item()
+                                except Exception as e:
+                                    print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
+                                    should_close = False
+                                
+                                shape_data = {
+                                    'type': 'path',
+                                    'points': points.tolist(),
+                                    'color': color,
+                                    'clf_name': clf_info['name'],
+                                    'clf_folder': clf_info['folder'],
+                                    'fill_closed': fill_closed,
+                                    'should_close': should_close,
+                                    'identifier': shape_identifier
+                                }
+                                all_shape_data.append(shape_data)
+                                
+                                # Filter by identifier if specified
+                                if identifier_strings is None:
+                                    # No filter, include all shapes
+                                    filtered_shape_data.append(shape_data)
+                                else:
+                                    # Include only shapes with matching identifiers
+                                    if shape_identifier and shape_identifier in identifier_strings:
+                                        filtered_shape_data.append(shape_data)
+                                        print(f"Including shape with identifier: {shape_identifier}")
+                                    elif shape_identifier:
+                                        print(f"Excluding shape with identifier: {shape_identifier}")
+                                    else:
+                                        print("Excluding shape without identifier")
+                        
+                        # Process circle shapes
+                        elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
+                            shape_identifier = None
+                            if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
+                                shape_identifier = str(shape.model.id).strip()
+                            
+                            shape_data = {
+                                'type': 'circle',
+                                'center': shape.center.tolist(),
+                                'radius': shape.radius,
+                                'color': color,
+                                'clf_name': clf_info['name'],
+                                'clf_folder': clf_info['folder'],
+                                'identifier': shape_identifier
+                            }
+                            all_shape_data.append(shape_data)
+                            
+                            # Filter by identifier
+                            if identifier_strings is None:
+                                filtered_shape_data.append(shape_data)
+                            else:
+                                if shape_identifier and shape_identifier in identifier_strings:
+                                    filtered_shape_data.append(shape_data)
+                                    print(f"Including circle with identifier: {shape_identifier}")
+            
+            except Exception as e:
+                print(f"Error processing {clf_info['name']} at height {height}mm: {str(e)}")
+        
+        print(f"Total shapes found: {len(all_shape_data)}")
+        print(f"Shapes after filtering: {len(filtered_shape_data)}")
+        
+        # Create the visualization if requested
+        if save_clean_png and filtered_shape_data:
+            import matplotlib.pyplot as plt
+            from matplotlib.patches import Polygon
+            from utils.myfuncs.plotTools import setup_platform_figure, save_platform_figure, draw_shape
+            
+            # Create figure with equal aspect ratio
+            fig = setup_platform_figure(figsize=(15, 15))
+            
+            # Remove all margins and spacing
+            ax = plt.gca()
+            ax.set_position([0, 0, 1, 1])
+            
+            # Set exact limits for platform size
+            plt.xlim(-125, 125)
+            plt.ylim(-125, 125)
+            
+            # Turn off all chart elements
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xticklabels([])
+            ax.set_yticklabels([])
+            plt.axis('off')
+            
+            # Draw filtered shapes
+            for shape_data in filtered_shape_data:
+                if shape_data['type'] == 'path' and 'points' in shape_data:
+                    points = np.array(shape_data['points'])
+                    color = shape_data['color']
+                    
+                    if fill_closed and shape_data.get('should_close', False):
+                        polygon = Polygon(points, facecolor='black', edgecolor=color, alpha=0.5)
+                        plt.gca().add_patch(polygon)
+                    else:
+                        draw_shape(plt, points, color)
+                        
+                elif shape_data['type'] == 'circle':
+                    circle = plt.Circle(shape_data['center'], shape_data['radius'], 
+                                       color=shape_data['color'], fill=False, alpha=0.7)
+                    plt.gca().add_artist(circle)
+            
+            plt.axis('equal')  # Ensure perfect square
+            
+            # Create filename with identifier info
+            if identifier_strings:
+                id_suffix = "_".join(identifier_strings[:3])  # Limit to first 3 IDs for filename
+                if len(identifier_strings) > 3:
+                    id_suffix += f"_plus{len(identifier_strings)-3}more"
+                filename = f'clean_platform_{height}mm_filtered_{id_suffix}.png'
+            else:
+                filename = f'clean_platform_{height}mm_all.png'
+                
+            output_path = os.path.join(output_dir, "clean_platforms", filename)
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            save_platform_figure(plt, output_path, pad_inches=0)
+            png_path = os.path.join("clean_platforms", filename)
+            
+            print(f"Saved filtered visualization to: {output_path}")
+            
+            return png_path
+        
+        elif save_clean_png and not filtered_shape_data:
+            print("No shapes found after filtering - no visualization generated")
+            return None
+        
+        else:
+            return None
 
 
-def analyze_build_for_web(build_folder_path, height_mm, exclude_folders=True):
+def analyze_build_for_web(build_folder_path, height_mm, exclude_folders=True, identifiers=None):
     """
     Convenience function for web app to analyze a build
     
@@ -224,12 +436,13 @@ def analyze_build_for_web(build_folder_path, height_mm, exclude_folders=True):
         build_folder_path: Path to the build folder
         height_mm: Height in millimeters to analyze
         exclude_folders: Whether to exclude folders based on patterns
+        identifiers: List of specific identifier numbers to analyze, or None for all
         
     Returns:
         dict with analysis results
     """
     analyzer = CLFWebAnalyzer()
-    return analyzer.analyze_build(build_folder_path, height_mm, exclude_folders)
+    return analyzer.analyze_build(build_folder_path, height_mm, exclude_folders, identifiers)
 
 
 if __name__ == "__main__":

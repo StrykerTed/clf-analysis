@@ -515,6 +515,109 @@ main {
     position: relative;
 }
 
+/* Identifier Filter Styles */
+.analysis-option {
+    margin-top: 20px;
+    padding: 16px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+}
+
+.analysis-option h4 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+}
+
+.option-description {
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+
+.identifier-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.identifier-input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 2px solid #dee2e6;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-family: 'Courier New', monospace;
+    transition: border-color 0.2s ease;
+    background: white;
+}
+
+.identifier-input:focus {
+    outline: none;
+    border-color: #f39c12;
+    box-shadow: 0 0 0 3px rgba(243, 156, 18, 0.1);
+}
+
+.identifier-input::placeholder {
+    color: #adb5bd;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.identifier-help-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid #6c757d;
+    background: white;
+    color: #6c757d;
+    font-size: 0.8rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.identifier-help-btn:hover {
+    background: #6c757d;
+    color: white;
+}
+
+.identifier-help {
+    margin-top: 12px;
+    padding: 12px;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.identifier-help strong {
+    color: #2c3e50;
+}
+
+.identifier-help ul {
+    margin: 8px 0 0 16px;
+}
+
+.identifier-help li {
+    margin-bottom: 4px;
+    line-height: 1.4;
+}
+
+.identifier-help code {
+    background: #f8f9fa;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: #e74c3c;
+}
+
 .analyze-btn {
     background: #f39c12;
     color: white;

@@ -74,6 +74,7 @@ def analyze_build(build_number):
         data = request.get_json() if request.is_json else {}
         height_mm = data.get('height_mm', 0)
         build_folder = data.get('build_folder', '')
+        identifiers = data.get('identifiers', None)  # New: identifier filter
         
         # Validate height
         if not isinstance(height_mm, (int, float)) or height_mm < 0 or height_mm > 9999.99:
@@ -103,12 +104,15 @@ def analyze_build(build_number):
         from clf_analysis_wrapper import analyze_build_for_web
         
         print(f"Starting CLF analysis for build {build_number} at height {height_mm}mm")
+        if identifiers:
+            print(f"Filtering to identifiers: {identifiers}")
         
         # Perform the actual CLF analysis
         analysis_results = analyze_build_for_web(
             build_folder_path=build_folder_path,
             height_mm=height_mm,
-            exclude_folders=True  # Always exclude folders for web analysis
+            exclude_folders=True,  # Always exclude folders for web analysis
+            identifiers=identifiers  # New: pass identifier filter
         )
         
         # Check if analysis was successful

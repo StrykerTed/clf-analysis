@@ -76,9 +76,29 @@ function initializeBuildSelection() {
         analyzeBtn.addEventListener('click', function() {
             if (selectedBuild) {
                 const height = getValidatedHeight();
-                if (height !== null) {
-                    analyzeBuild(selectedBuild, height);
+                const identifiers = parseIdentifierInput();
+                
+                if (height !== null && identifiers !== false) {
+                    analyzeBuild(selectedBuild, height, identifiers);
                 }
+            }
+        });
+    }
+    
+    // Initialize identifier help functionality
+    const identifierHelpBtn = document.getElementById('identifier-help-btn');
+    const identifierHelp = document.getElementById('identifier-help');
+    
+    if (identifierHelpBtn && identifierHelp) {
+        identifierHelpBtn.addEventListener('click', function() {
+            if (identifierHelp.style.display === 'none' || identifierHelp.style.display === '') {
+                identifierHelp.style.display = 'block';
+                identifierHelpBtn.textContent = '×';
+                identifierHelpBtn.title = 'Hide help';
+            } else {
+                identifierHelp.style.display = 'none';
+                identifierHelpBtn.textContent = '?';
+                identifierHelpBtn.title = 'Show help';
             }
         });
     }
@@ -171,6 +191,61 @@ function getValidatedHeight() {
     }
     
     return numValue;
+}
+
+// Parse and validate identifier input
+function parseIdentifierInput() {
+    const identifierInput = document.getElementById('identifier-input');
+    if (!identifierInput) return null;
+    
+    const value = identifierInput.value.trim();
+    
+    // Empty input means analyze all identifiers
+    if (!value) {
+        return null; // null means no filter
+    }
+    
+    try {
+        const identifiers = new Set();
+        
+        // Split by comma and process each part
+        const parts = value.split(',').map(part => part.trim()).filter(part => part);
+        
+        for (const part of parts) {
+            if (part.includes('-')) {
+                // Handle range (e.g., "0-5")
+                const [start, end] = part.split('-').map(x => x.trim());
+                const startNum = parseInt(start);
+                const endNum = parseInt(end);
+                
+                if (isNaN(startNum) || isNaN(endNum)) {
+                    throw new Error(`Invalid range: ${part}`);
+                }
+                
+                if (startNum > endNum) {
+                    throw new Error(`Invalid range: ${part} (start > end)`);
+                }
+                
+                for (let i = startNum; i <= endNum; i++) {
+                    identifiers.add(i);
+                }
+            } else {
+                // Handle single identifier
+                const num = parseInt(part);
+                if (isNaN(num)) {
+                    throw new Error(`Invalid identifier: ${part}`);
+                }
+                identifiers.add(num);
+            }
+        }
+        
+        return Array.from(identifiers).sort((a, b) => a - b);
+        
+    } catch (error) {
+        showNotification(`Identifier input error: ${error.message}`, 'error');
+        identifierInput.focus();
+        return false; // false means error
+    }
 }
 
 // Update analyze button state based on inputs
@@ -329,10 +404,16 @@ function selectBuild(build, cardElement) {
 }
 
 // Analyze selected build
-function analyzeBuild(build, height) {
+function analyzeBuild(build, height, identifiers = null) {
     if (!build || height === null || height === undefined) return;
     
-    showNotification(`Starting CLF analysis of Build ${build.build_number} at height ${height}mm...`, 'info');
+    let notificationMsg = `Starting CLF analysis of Build ${build.build_number} at height ${height}mm`;
+    if (identifiers && identifiers.length > 0) {
+        notificationMsg += ` for parts: ${identifiers.join(', ')}`;
+    }
+    notificationMsg += '...';
+    
+    showNotification(notificationMsg, 'info');
     
     // Show loading state
     showAnalysisLoading(true);
@@ -340,7 +421,8 @@ function analyzeBuild(build, height) {
     const requestData = {
         build_number: build.build_number,
         height_mm: height,
-        build_folder: build.folder_name
+        build_folder: build.folder_name,
+        identifiers: identifiers // null means all identifiers, array means specific ones
     };
     
     fetch(`/api/builds/${build.build_number}/analyze`, {
