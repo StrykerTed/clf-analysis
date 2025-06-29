@@ -1,5 +1,7 @@
 // CLF Analysis Tool JavaScript
 
+let selectedBuild = null;
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('CLF Analysis Tool loaded successfully!');
     
@@ -9,7 +11,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Add interactive functionality
     initializeFeatureCards();
-    initializeUploadButton();
+    initializeBuildSelection();
     
     // Health check functionality
     const statusGrid = document.querySelector('.status-grid');
@@ -18,6 +20,9 @@ document.addEventListener('DOMContentLoaded', function() {
             performHealthCheck();
         });
     }
+    
+    // Load available builds on page load
+    loadAvailableBuilds();
 });
 
 // Real-time clock update
@@ -53,50 +58,195 @@ function initializeFeatureCards() {
     });
 }
 
-// Initialize upload button
-function initializeUploadButton() {
-    const uploadBtn = document.querySelector('.upload-btn');
-    if (uploadBtn) {
-        uploadBtn.addEventListener('click', function() {
-            // Create file input element
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.accept = '.clf,.abp';
-            fileInput.style.display = 'none';
-            
-            fileInput.addEventListener('change', function(e) {
-                const file = e.target.files[0];
-                if (file) {
-                    showNotification(`Selected file: ${file.name}`, 'success');
-                    // Here you would handle the file upload
-                    simulateFileProcessing(file.name);
-                }
-                document.body.removeChild(fileInput);
-            });
-            
-            document.body.appendChild(fileInput);
-            fileInput.click();
+// Initialize build selection functionality
+function initializeBuildSelection() {
+    const refreshBtn = document.getElementById('refresh-builds');
+    const analyzeBtn = document.getElementById('analyze-btn');
+    
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            loadAvailableBuilds();
+        });
+    }
+    
+    if (analyzeBtn) {
+        analyzeBtn.addEventListener('click', function() {
+            if (selectedBuild) {
+                analyzeBuild(selectedBuild);
+            }
         });
     }
 }
 
-// Simulate file processing
-function simulateFileProcessing(filename) {
-    showNotification('Processing CLF file...', 'info');
+// Load available builds from the API
+function loadAvailableBuilds() {
+    const container = document.getElementById('builds-container');
+    const actions = document.getElementById('build-actions');
     
-    setTimeout(() => {
-        showNotification(`File ${filename} processed successfully!`, 'success');
-        updateProcessingStatus();
-    }, 2000);
+    // Show loading spinner
+    container.innerHTML = `
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading available builds...</p>
+        </div>
+    `;
+    
+    actions.style.display = 'none';
+    selectedBuild = null;
+    
+    fetch('/api/builds')
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                displayBuilds(data.builds);
+                showNotification(`Found ${data.count} available builds`, 'success');
+            } else {
+                displayError(data.message || 'Failed to load builds');
+                showNotification('Failed to load builds', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading builds:', error);
+            displayError('Network error: Could not connect to server');
+            showNotification('Network error loading builds', 'error');
+        });
 }
 
-// Update processing status
-function updateProcessingStatus() {
+// Display builds in the container
+function displayBuilds(builds) {
+    const container = document.getElementById('builds-container');
+    
+    if (builds.length === 0) {
+        container.innerHTML = `
+            <div class="no-builds-message">
+                <h4>No ABP Builds Found</h4>
+                <p>No build folders found in the abp_contents directory.</p>
+                <p>Make sure you have unzipped ABP files with 'build-' in their folder names.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const buildsGrid = document.createElement('div');
+    buildsGrid.className = 'builds-grid';
+    
+    builds.forEach(build => {
+        const buildCard = createBuildCard(build);
+        buildsGrid.appendChild(buildCard);
+    });
+    
+    container.innerHTML = '';
+    container.appendChild(buildsGrid);
+}
+
+// Create a build card element
+function createBuildCard(build) {
+    const card = document.createElement('div');
+    card.className = 'build-card';
+    card.dataset.buildNumber = build.build_number;
+    card.dataset.buildData = JSON.stringify(build);
+    
+    const statusClass = build.status.toLowerCase() === 'complete' ? 'complete' : 'processing';
+    
+    card.innerHTML = `
+        <div class="build-card-header">
+            <div class="build-number">Build ${build.build_number}</div>
+            <div class="build-status ${statusClass}">${build.status}</div>
+        </div>
+        <div class="build-folder-name">${build.folder_name}</div>
+        <div class="build-features">
+            <div class="build-feature ${build.has_complete ? 'available' : ''}">
+                ${build.has_complete ? '✅' : '❌'} Complete
+            </div>
+            <div class="build-feature ${build.has_models ? 'available' : ''}">
+                ${build.has_models ? '✅' : '❌'} Models
+            </div>
+        </div>
+    `;
+    
+    card.addEventListener('click', function() {
+        selectBuild(build, card);
+    });
+    
+    return card;
+}
+
+// Select a build
+function selectBuild(build, cardElement) {
+    selectedBuild = build;
+    
+    // Remove previous selection
+    document.querySelectorAll('.build-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+    
+    // Select current card
+    cardElement.classList.add('selected');
+    
+    // Update build actions
+    const actions = document.getElementById('build-actions');
+    const buildName = document.getElementById('selected-build-name');
+    const buildStatus = document.getElementById('selected-build-status');
+    const analyzeBtn = document.getElementById('analyze-btn');
+    
+    if (buildName) buildName.textContent = `Build ${build.build_number}`;
+    if (buildStatus) buildStatus.textContent = build.status;
+    
+    if (analyzeBtn) {
+        analyzeBtn.disabled = false;
+    }
+    
+    actions.style.display = 'flex';
+    
+    showNotification(`Selected Build ${build.build_number}`, 'info');
+}
+
+// Analyze selected build
+function analyzeBuild(build) {
+    if (!build) return;
+    
+    showNotification(`Starting analysis of Build ${build.build_number}...`, 'info');
+    
+    fetch(`/api/builds/${build.build_number}/analyze`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showNotification(data.message, 'success');
+                updateAnalysisStatus(build.build_number);
+            } else {
+                showNotification(`Analysis failed: ${data.message}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error analyzing build:', error);
+            showNotification('Network error during analysis', 'error');
+        });
+}
+
+// Update analysis status
+function updateAnalysisStatus(buildNumber) {
     const clfStatus = document.querySelector('.status-grid .status-item:nth-child(3) .status-value');
     if (clfStatus) {
-        clfStatus.textContent = 'PROCESSING';
+        clfStatus.textContent = 'ANALYZING';
         clfStatus.className = 'status-value status-running';
     }
+}
+
+// Display error message
+function displayError(message) {
+    const container = document.getElementById('builds-container');
+    container.innerHTML = `
+        <div class="error-message">
+            <h4>Error Loading Builds</h4>
+            <p>${message}</p>
+            <button onclick="loadAvailableBuilds()" class="refresh-btn">🔄 Try Again</button>
+        </div>
+    `;
 }
 
 // Health check functionality
@@ -237,7 +387,16 @@ style.textContent = `
         background: #e9ecef;
     }
     
-    .upload-btn:active {
+    .build-card {
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .analyze-btn:active {
+        transform: scale(0.98);
+    }
+    
+    .refresh-btn:active {
         transform: scale(0.98);
     }
 `;

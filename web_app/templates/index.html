@@ -89,14 +89,29 @@
                     </div>
                 </div>
 
-                <!-- Platform Visualization Section -->
-                <div class="visualization-section">
-                    <h2>🎯 Platform Visualization</h2>
-                    <div class="viz-placeholder">
-                        <div class="viz-content">
-                            <h3>Interactive CLF Analysis Dashboard</h3>
-                            <p>Upload your CLF files here to begin analysis and visualization</p>
-                            <button class="upload-btn">📁 Upload CLF File</button>
+                <!-- Build Selection Section -->
+                <div class="build-selection-section">
+                    <h2>🎯 ABP Build Selection</h2>
+                    <div class="build-content">
+                        <div class="build-header">
+                            <h3>Select an Available ABP Build</h3>
+                            <p>Choose from processed ABP builds to analyze paths and visualizations</p>
+                            <button class="refresh-btn" id="refresh-builds">🔄 Refresh Builds</button>
+                        </div>
+                        
+                        <div class="builds-container" id="builds-container">
+                            <div class="loading-spinner">
+                                <div class="spinner"></div>
+                                <p>Loading available builds...</p>
+                            </div>
+                        </div>
+                        
+                        <div class="build-actions" id="build-actions" style="display: none;">
+                            <div class="selected-build-info" id="selected-build-info">
+                                <h4>Selected Build: <span id="selected-build-name">None</span></h4>
+                                <p>Status: <span id="selected-build-status">-</span></p>
+                            </div>
+                            <button class="analyze-btn" id="analyze-btn" disabled>� Analyze Build</button>
                         </div>
                     </div>
                 </div>
