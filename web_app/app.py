@@ -96,8 +96,64 @@ def analyze_build(build_number):
                 'message': f'Build {build_number} not found'
             }), 404
         
-        # Here you would integrate your actual CLF analysis code
-        # For now, this is a placeholder response
+        # Get the full path to the build folder
+        build_folder_path = os.path.join(ABP_CONTENTS_PATH, actual_build_folder)
+        
+        # Import and use the CLF analysis wrapper
+        from clf_analysis_wrapper import analyze_build_for_web
+        
+        print(f"Starting CLF analysis for build {build_number} at height {height_mm}mm")
+        
+        # Perform the actual CLF analysis
+        analysis_results = analyze_build_for_web(
+            build_folder_path=build_folder_path,
+            height_mm=height_mm,
+            exclude_folders=True  # Always exclude folders for web analysis
+        )
+        
+        # Check if analysis was successful
+        if "error" in analysis_results:
+            return jsonify({
+                'status': 'error',
+                'message': f'Analysis failed: {analysis_results["error"]}',
+                'build_number': build_number,
+                'height_mm': height_mm
+            }), 500
+        
+        # Cleanup temporary files (optional - could be done async)
+        try:
+            from clf_analysis_wrapper import CLFWebAnalyzer
+            analyzer = CLFWebAnalyzer()
+            analyzer.cleanup_temp_files(analysis_results.get("temp_directory", ""))
+        except Exception as cleanup_error:
+            print(f"Warning: Cleanup failed: {cleanup_error}")
+        
+        # Prepare response with visualization data
+        response_data = {
+            'status': 'success',
+            'message': f'Analysis completed for Build {build_number}',
+            'build_folder': actual_build_folder,
+            'build_number': build_number,
+            'height_mm': height_mm,
+            'analysis_id': f"{build_number}_{height_mm}_{int(time.time())}",
+            'timestamp': analysis_results.get('timestamp'),
+            'files_processed': analysis_results.get('files_processed', 0),
+            'files_excluded': analysis_results.get('files_excluded', 0),
+            'total_files_found': analysis_results.get('total_files_found', 0),
+            'visualizations': analysis_results.get('visualizations', {})
+        }
+        
+        print(f"Analysis completed successfully. Processed {response_data['files_processed']} files.")
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Error in analyze_build endpoint: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Analysis error: {str(e)}',
+            'build_number': build_number if 'build_number' in locals() else 'unknown',
+            'height_mm': height_mm if 'height_mm' in locals() else 0
+        }), 500
         return jsonify({
             'status': 'success',
             'message': f'Analysis started for Build {build_number}',

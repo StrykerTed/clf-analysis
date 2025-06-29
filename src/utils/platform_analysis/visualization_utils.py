@@ -1,5 +1,7 @@
 import os
 import sys
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for web applications
 import matplotlib.pyplot as plt   
 import numpy as np   
 import json

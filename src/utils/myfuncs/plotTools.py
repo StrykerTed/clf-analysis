@@ -1,3 +1,7 @@
+import matplotlib
+# Ensure we use non-interactive backend for web applications
+if matplotlib.get_backend() != 'Agg':
+    matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Polygon
