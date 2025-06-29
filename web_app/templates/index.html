@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLF Analysis Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CLF Analysis Tool</h1>
+            <p>Flask Web Interface for ABP File Processing</p>
+        </header>
+        
+        <main>
+            <div class="welcome-section">
+                <h2>Hello World!</h2>
+                <p>Welcome to the CLF Analysis web interface. This tool will help you process and visualize ABP file paths.</p>
+                
+                <div class="status-card">
+                    <h3>System Status</h3>
+                    <p>✅ Flask application is running</p>
+                    <p>🔧 Ready for ABP file processing</p>
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 CLF Analysis Tool</p>
+        </footer>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
