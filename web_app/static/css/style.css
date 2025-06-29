@@ -335,51 +335,56 @@ main {
 
 .builds-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 15px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px 0;
 }
 
 .build-card {
-    background: #f8f9fa;
-    border: 2px solid #dee2e6;
-    border-radius: 8px;
-    padding: 20px;
+    background: #ffffff;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    padding: 24px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.3s ease;
     position: relative;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .build-card:hover {
     border-color: #f39c12;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(243, 156, 18, 0.15);
 }
 
 .build-card.selected {
     border-color: #f39c12;
-    background: #fff8e1;
-    box-shadow: 0 4px 12px rgba(243, 156, 18, 0.2);
+    background: #fffdf7;
+    box-shadow: 0 8px 25px rgba(243, 156, 18, 0.2);
+    transform: translateY(-2px);
 }
 
 .build-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 16px;
 }
 
 .build-number {
-    font-size: 1.2rem;
-    font-weight: 600;
+    font-size: 1.3rem;
+    font-weight: 700;
     color: #2c3e50;
+    letter-spacing: -0.5px;
 }
 
 .build-status {
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .build-status.complete {
@@ -394,27 +399,35 @@ main {
 
 .build-folder-name {
     color: #666;
-    font-size: 0.9rem;
-    margin-bottom: 10px;
-    font-family: monospace;
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+    background: #f8f9fa;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
 }
 
 .build-features {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     flex-wrap: wrap;
 }
 
 .build-feature {
     display: flex;
     align-items: center;
-    gap: 5px;
-    font-size: 0.8rem;
+    gap: 6px;
+    font-size: 0.85rem;
     color: #666;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: #f8f9fa;
 }
 
 .build-feature.available {
     color: #28a745;
+    background: #f0f9f4;
 }
 
 .build-actions {
@@ -630,6 +643,24 @@ footer {
         padding: 6px 12px;
     }
     
+    .builds-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        padding: 16px 0;
+    }
+    
+    .build-card {
+        padding: 20px;
+    }
+    
+    .build-number {
+        font-size: 1.2rem;
+    }
+    
+    .builds-controls {
+        padding: 0 20px;
+    }
+    
     .build-actions {
         flex-direction: column;
         align-items: stretch;
@@ -658,6 +689,29 @@ footer {
     
     .viz-placeholder {
         padding: 40px 15px;
+    }
+    
+    .builds-grid {
+        gap: 12px;
+        padding: 12px 0;
+    }
+    
+    .build-card {
+        padding: 16px;
+    }
+    
+    .build-folder-name {
+        font-size: 0.8rem;
+        padding: 6px 10px;
+    }
+    
+    .build-features {
+        gap: 8px;
+    }
+    
+    .build-feature {
+        font-size: 0.8rem;
+        padding: 3px 6px;
     }
 }
 

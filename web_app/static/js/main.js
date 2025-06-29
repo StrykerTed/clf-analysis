@@ -252,16 +252,13 @@ function displayBuilds(builds) {
         return;
     }
     
-    const buildsGrid = document.createElement('div');
-    buildsGrid.className = 'builds-grid';
+    // Clear container and add builds directly (no nested grid)
+    container.innerHTML = '';
     
     builds.forEach(build => {
         const buildCard = createBuildCard(build);
-        buildsGrid.appendChild(buildCard);
+        container.appendChild(buildCard);
     });
-    
-    container.innerHTML = '';
-    container.appendChild(buildsGrid);
 }
 
 // Create a build card element
