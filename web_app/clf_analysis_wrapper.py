@@ -508,7 +508,7 @@ class CLFWebAnalyzer:
     
     def create_holes_analysis(self, clf_files, output_dir, height=1.0):
         """
-        Generate holes analysis visualization and statistics
+        Generate holes analysis visualization and statistics using geometric containment
         
         Args:
             clf_files: List of CLF file information dictionaries
@@ -519,49 +519,105 @@ class CLFWebAnalyzer:
             tuple: (holes_visualization_path, holes_statistics_dict)
         """
         try:
-            print(f"Starting holes analysis at {height}mm...")
-            
-            # Import hole analysis functions
-            sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # Add project root
-            from enhanced_hole_analysis import analyze_layer_with_holes
+            print(f"Starting geometric holes analysis at {height}mm...")
+            print("🔍 USING NEW GEOMETRIC CONTAINMENT METHOD 🔍")
             
             all_exteriors = []
             all_holes = []
             file_stats = []
             
-            # Process all CLF files
+            # Process all CLF files using geometric containment approach
             for clf_info in clf_files:
-                print(f"Analyzing holes in {clf_info['name']}...")
-                shape_data = analyze_layer_with_holes(clf_info, height)
+                print(f"Analyzing geometric holes in {clf_info['name']}...")
                 
-                # Collect all shapes
-                all_exteriors.extend(shape_data['exterior_shapes'])
-                all_holes.extend(shape_data['holes'])
-                
-                # Create file-specific statistics
-                file_stat = {
-                    'file_name': clf_info['name'],
-                    'folder': clf_info['folder'],
-                    'total_shapes': shape_data['total_shapes'],
-                    'shapes_with_holes': shape_data['shapes_with_holes'],
-                    'total_holes': shape_data['total_holes'],
-                    'exterior_count': len(shape_data['exterior_shapes']),
-                    'hole_count': len(shape_data['holes'])
-                }
-                file_stats.append(file_stat)
-                print(f"  - {file_stat['total_shapes']} shapes, {file_stat['total_holes']} holes, {file_stat['exterior_count']} exteriors")
-                
-                # Debug: Show what shapes were found
-                for ext in shape_data['exterior_shapes']:
-                    print(f"    EXTERIOR: {ext['clf_file']} - ID:{ext['identifier']} - HasHoles:{ext['has_holes']}")
-                for hole in shape_data['holes']:
-                    print(f"    HOLE: {hole['clf_file']} - ID:{hole['identifier']} - HoleIdx:{hole['hole_index']}")
+                try:
+                    part = CLFFile(clf_info['path'])
+                    layer = part.find(height)
+                    
+                    if layer is None or not hasattr(layer, 'shapes'):
+                        continue
+                    
+                    shapes = list(layer.shapes)
+                    total_shapes = len(shapes)
+                    exteriors_found = 0
+                    holes_found = 0
+                    
+                    print(f"  Found {total_shapes} shapes in {clf_info['name']}")
+                    
+                    # Process each shape pair to find holes using geometric containment
+                    for i, shape1 in enumerate(shapes):
+                        if not hasattr(shape1, 'points') or not shape1.points:
+                            continue
+                            
+                        # Get identifier for shape1
+                        identifier1 = "unknown"
+                        if hasattr(shape1, 'model') and hasattr(shape1.model, 'id'):
+                            identifier1 = str(shape1.model.id)
+                        
+                        # Shape1 first path is always an exterior (like main visualization)
+                        exterior_points = shape1.points[0]
+                        exterior_info = {
+                            'type': 'exterior',
+                            'points': exterior_points,
+                            'identifier': identifier1,
+                            'clf_file': clf_info['name'],
+                            'clf_folder': clf_info['folder'],
+                            'shape_index': i
+                        }
+                        all_exteriors.append(exterior_info)
+                        exteriors_found += 1
+                        
+                        # Look for other shapes that might be holes inside this shape
+                        for j, shape2 in enumerate(shapes):
+                            if i == j:  # Skip same shape
+                                continue
+                                
+                            if not hasattr(shape2, 'points') or not shape2.points:
+                                continue
+                            
+                            # Get identifier for shape2  
+                            identifier2 = "unknown"
+                            if hasattr(shape2, 'model') and hasattr(shape2.model, 'id'):
+                                identifier2 = str(shape2.model.id)
+                            
+                            # Check if shape2 is inside shape1 using geometric containment
+                            shape2_points = shape2.points[0]  # Use first path of shape2
+                            
+                            if self.is_shape_inside_shape(shape2_points, exterior_points):
+                                print(f"    Found geometric hole: Shape {j} (ID:{identifier2}) inside Shape {i} (ID:{identifier1})")
+                                
+                                hole_info = {
+                                    'type': 'hole',
+                                    'points': shape2_points,
+                                    'identifier': identifier2,
+                                    'clf_file': clf_info['name'],
+                                    'clf_folder': clf_info['folder'],
+                                    'shape_index': j,
+                                    'parent_shape_index': i,
+                                    'parent_identifier': identifier1
+                                }
+                                all_holes.append(hole_info)
+                                holes_found += 1
+                    
+                    # Create file-specific statistics
+                    file_stat = {
+                        'file_name': clf_info['name'],
+                        'folder': clf_info['folder'],
+                        'total_shapes': total_shapes,
+                        'exterior_count': exteriors_found,
+                        'hole_count': holes_found
+                    }
+                    file_stats.append(file_stat)
+                    print(f"  - {exteriors_found} exteriors, {holes_found} holes found")
+                    
+                except Exception as e:
+                    print(f"Error analyzing {clf_info['name']}: {e}")
+                    continue
             
             # Generate comprehensive statistics
             total_shapes = sum(stat['total_shapes'] for stat in file_stats)
             total_exteriors = len(all_exteriors)
             total_holes = len(all_holes)
-            shapes_with_holes = sum(stat['shapes_with_holes'] for stat in file_stats)
             
             holes_stats = {
                 'summary': {
@@ -570,22 +626,23 @@ class CLFWebAnalyzer:
                     'total_shapes': total_shapes,
                     'total_exterior_shapes': total_exteriors,
                     'total_holes': total_holes,
-                    'shapes_with_holes': shapes_with_holes,
-                    'percentage_with_holes': (shapes_with_holes / total_exteriors * 100) if total_exteriors > 0 else 0
+                    'detection_method': 'geometric_containment'
                 },
-                'file_stats': file_stats
+                'file_stats': file_stats,
+                'exterior_count': total_exteriors,
+                'holes_count': total_holes,
+                'total_hole_area': 0  # TODO: Calculate area if needed
             }
             
-            print(f"Holes analysis summary:")
+            print(f"Geometric holes analysis summary:")
             print(f"  - Total shapes: {total_shapes}")
             print(f"  - Exterior shapes: {total_exteriors}")
             print(f"  - Total holes: {total_holes}")
-            print(f"  - Shapes with holes: {shapes_with_holes}")
             
             # Create holes visualization
             holes_vis_path = None
             if all_exteriors or all_holes:
-                print("Generating holes visualization...")
+                print("Generating geometric holes visualization...")
                 
                 # Set up figure for web display
                 import matplotlib.pyplot as plt
@@ -609,7 +666,7 @@ class CLFWebAnalyzer:
                     'Net.clf': '#F18F01'
                 }
                 
-                # Draw exterior shapes (filled with transparency)
+                # Draw exterior shapes (semi-transparent)
                 for ext_shape in all_exteriors:
                     color = colors.get(ext_shape['clf_file'], '#666666')
                     points = ext_shape['points']
@@ -627,7 +684,7 @@ class CLFWebAnalyzer:
                 plt.axis('equal')
                 
                 # Save holes visualization
-                holes_filename = f'holes_analysis_{height}mm.png'
+                holes_filename = f'holes_analysis_geometric_{height}mm.png'
                 holes_output_path = os.path.join(output_dir, "holes_analysis", holes_filename)
                 os.makedirs(os.path.dirname(holes_output_path), exist_ok=True)
                 
@@ -635,17 +692,50 @@ class CLFWebAnalyzer:
                 save_platform_figure(plt, holes_output_path, pad_inches=0)
                 
                 holes_vis_path = os.path.join("holes_analysis", holes_filename)
-                print(f"Saved holes visualization: {holes_output_path}")
+                print(f"Saved geometric holes visualization: {holes_output_path}")
                 
                 plt.close(fig)
             
             return holes_vis_path, holes_stats
             
         except Exception as e:
-            print(f"Error in holes analysis: {e}")
+            print(f"Error in geometric holes analysis: {e}")
             import traceback
             traceback.print_exc()
             return None, None
+    
+    def is_shape_inside_shape(self, inner_points, outer_points):
+        """
+        Check if inner_points shape is geometrically contained within outer_points shape
+        
+        Args:
+            inner_points: numpy array of points for the inner shape
+            outer_points: numpy array of points for the outer shape
+            
+        Returns:
+            bool: True if inner shape is inside outer shape
+        """
+        try:
+            import numpy as np
+            from matplotlib.path import Path
+            
+            # Create a path from the outer shape
+            outer_path = Path(outer_points)
+            
+            # Check if all points of the inner shape are inside the outer path
+            # We'll check a few sample points to be efficient
+            sample_indices = np.linspace(0, len(inner_points)-1, min(10, len(inner_points)), dtype=int)
+            sample_points = inner_points[sample_indices]
+            
+            # All sample points should be inside the outer shape
+            inside_checks = outer_path.contains_points(sample_points)
+            
+            # Return True if most points are inside (allowing for edge cases)
+            return np.sum(inside_checks) >= len(inside_checks) * 0.8
+            
+        except Exception as e:
+            print(f"Error in geometric containment check: {e}")
+            return False
 
 
 def analyze_build_for_web(build_folder_path, height_mm, exclude_folders=True, identifiers=None, clf_files=None):
