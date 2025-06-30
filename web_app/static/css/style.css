@@ -20,7 +20,7 @@ body {
     display: flex;
     flex-direction: column;
     background: white;
-    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
 }
 
 /* Header styles matching reference */
@@ -229,7 +229,7 @@ main {
 
 .feature-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .feature-icon {
@@ -329,8 +329,13 @@ main {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 .builds-grid {
@@ -348,7 +353,7 @@ main {
     cursor: pointer;
     transition: all 0.3s ease;
     position: relative;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .build-card:hover {
@@ -646,7 +651,7 @@ main {
     background: white;
     border: 2px solid #dee2e6;
     border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .clf-filter-header {
@@ -781,12 +786,12 @@ main {
         grid-template-columns: 1fr;
         gap: 6px;
     }
-    
+
     .clf-filter-controls {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .clf-count {
         margin-left: 0;
         text-align: center;
@@ -870,7 +875,7 @@ footer {
 
 .footer-badge {
     padding: 4px 10px;
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     font-size: 0.8rem;
 }
@@ -880,7 +885,7 @@ footer {
     background: white;
     border-radius: 12px;
     padding: 30px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .results-header {
@@ -937,7 +942,7 @@ footer {
     cursor: pointer;
     transition: transform 0.2s ease;
     border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .platform-visualization:hover {
@@ -1154,7 +1159,8 @@ footer {
 }
 
 /* Visualization error and placeholder */
-.visualization-error, .visualization-placeholder {
+.visualization-error,
+.visualization-placeholder {
     text-align: center;
     padding: 40px 20px;
     background: #f8f9fa;
@@ -1162,7 +1168,8 @@ footer {
     margin: 20px 0;
 }
 
-.visualization-error h4, .visualization-placeholder h4 {
+.visualization-error h4,
+.visualization-placeholder h4 {
     color: #2c3e50;
     margin-bottom: 15px;
 }
@@ -1181,80 +1188,80 @@ footer {
         margin: 0;
         box-shadow: none;
     }
-    
+
     .header-top,
     .hero-section,
     .content-wrapper {
         padding: 20px;
     }
-    
+
     .logo-section {
         flex-direction: column;
         align-items: center;
         gap: 10px;
         text-align: center;
     }
-    
+
     .divider {
         display: none;
     }
-    
+
     .hero-content h1 {
         font-size: 2rem;
     }
-    
+
     .status-grid {
         grid-template-columns: 1fr;
         gap: 15px;
     }
-    
+
     .features-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .badges {
         gap: 8px;
     }
-    
+
     .badge {
         font-size: 0.8rem;
         padding: 6px 12px;
     }
-    
+
     .builds-grid {
         grid-template-columns: 1fr;
         gap: 16px;
         padding: 16px 0;
     }
-    
+
     .build-card {
         padding: 20px;
     }
-    
+
     .build-number {
         font-size: 1.2rem;
     }
-    
+
     .builds-controls {
         padding: 0 20px;
     }
-    
+
     .build-actions {
         flex-direction: column;
         align-items: stretch;
         gap: 15px;
     }
-    
+
     .analysis-controls {
         flex-direction: column;
         align-items: stretch;
         gap: 15px;
     }
-    
+
     .height-input {
         width: 100%;
     }
-    
+
     .analyze-btn {
         width: 100%;
     }
@@ -1264,29 +1271,29 @@ footer {
     .hero-content h1 {
         font-size: 1.8rem;
     }
-    
+
     .viz-placeholder {
         padding: 40px 15px;
     }
-    
+
     .builds-grid {
         gap: 12px;
         padding: 12px 0;
     }
-    
+
     .build-card {
         padding: 16px;
     }
-    
+
     .build-folder-name {
         font-size: 0.8rem;
         padding: 6px 10px;
     }
-    
+
     .build-features {
         gap: 8px;
     }
-    
+
     .build-feature {
         font-size: 0.8rem;
         padding: 3px 6px;

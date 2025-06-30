@@ -41,6 +41,7 @@ python app.py
 ```
 
 #### Option 2: Using Ctrl+C
+
 Press `Ctrl+C` in the terminal where the application is running
 
 #### Option 3: Manual Stop

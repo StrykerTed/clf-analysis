@@ -180,6 +180,14 @@ class CLFWebAnalyzer:
                         save_clean_png=True
                     )
                 
+                # Generate holes analysis visualization
+                print(f"Generating holes analysis visualization at {height_mm}mm...")
+                holes_file, holes_stats = self.create_holes_analysis(
+                    final_clf_files,
+                    temp_dir,
+                    height=height_mm
+                )
+                
                 if clean_file:
                     # Convert relative path to absolute
                     if not os.path.isabs(clean_file):
@@ -200,12 +208,45 @@ class CLFWebAnalyzer:
                             "base64_data": img_data,
                             "type": "image/png"
                         }
-                        print("Successfully converted visualization to base64")
+                        print("Successfully converted platform visualization to base64")
                     else:
-                        print(f"Warning: Generated file not found at {clean_file_abs}")
+                        print(f"Warning: Generated platform file not found at {clean_file_abs}")
                         
                 else:
                     print("No clean platform file was generated")
+                
+                # Process holes analysis visualization
+                if holes_file:
+                    # Convert relative path to absolute
+                    if not os.path.isabs(holes_file):
+                        holes_file_abs = os.path.join(temp_dir, holes_file)
+                    else:
+                        holes_file_abs = holes_file
+                    
+                    print(f"Created holes analysis file: {holes_file_abs}")
+                    
+                    # Check if file exists and convert to base64 for web display
+                    if os.path.exists(holes_file_abs):
+                        with open(holes_file_abs, 'rb') as img_file:
+                            img_data = base64.b64encode(img_file.read()).decode('utf-8')
+                            
+                        analysis_results["visualizations"]["holes_analysis"] = {
+                            "filename": os.path.basename(holes_file_abs),
+                            "path": holes_file_abs,
+                            "base64_data": img_data,
+                            "type": "image/png"
+                        }
+                        print("Successfully converted holes visualization to base64")
+                    else:
+                        print(f"Warning: Generated holes file not found at {holes_file_abs}")
+                        
+                else:
+                    print("No holes analysis file was generated")
+                
+                # Add holes statistics to results
+                if holes_stats:
+                    analysis_results["holes_stats"] = holes_stats
+                    print(f"Added holes statistics: {len(holes_stats.get('file_stats', []))} files analyzed")
                     
             except Exception as viz_error:
                 print(f"Error generating visualization: {viz_error}")
@@ -464,6 +505,147 @@ class CLFWebAnalyzer:
         
         else:
             return None
+    
+    def create_holes_analysis(self, clf_files, output_dir, height=1.0):
+        """
+        Generate holes analysis visualization and statistics
+        
+        Args:
+            clf_files: List of CLF file information dictionaries
+            output_dir: Directory to save the holes visualization
+            height: Height in mm to analyze
+            
+        Returns:
+            tuple: (holes_visualization_path, holes_statistics_dict)
+        """
+        try:
+            print(f"Starting holes analysis at {height}mm...")
+            
+            # Import hole analysis functions
+            sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # Add project root
+            from enhanced_hole_analysis import analyze_layer_with_holes
+            
+            all_exteriors = []
+            all_holes = []
+            file_stats = []
+            
+            # Process all CLF files
+            for clf_info in clf_files:
+                print(f"Analyzing holes in {clf_info['name']}...")
+                shape_data = analyze_layer_with_holes(clf_info, height)
+                
+                # Collect all shapes
+                all_exteriors.extend(shape_data['exterior_shapes'])
+                all_holes.extend(shape_data['holes'])
+                
+                # Create file-specific statistics
+                file_stat = {
+                    'file_name': clf_info['name'],
+                    'folder': clf_info['folder'],
+                    'total_shapes': shape_data['total_shapes'],
+                    'shapes_with_holes': shape_data['shapes_with_holes'],
+                    'total_holes': shape_data['total_holes'],
+                    'exterior_count': len(shape_data['exterior_shapes']),
+                    'hole_count': len(shape_data['holes'])
+                }
+                file_stats.append(file_stat)
+                print(f"  - {file_stat['total_shapes']} shapes, {file_stat['total_holes']} holes, {file_stat['exterior_count']} exteriors")
+                
+                # Debug: Show what shapes were found
+                for ext in shape_data['exterior_shapes']:
+                    print(f"    EXTERIOR: {ext['clf_file']} - ID:{ext['identifier']} - HasHoles:{ext['has_holes']}")
+                for hole in shape_data['holes']:
+                    print(f"    HOLE: {hole['clf_file']} - ID:{hole['identifier']} - HoleIdx:{hole['hole_index']}")
+            
+            # Generate comprehensive statistics
+            total_shapes = sum(stat['total_shapes'] for stat in file_stats)
+            total_exteriors = len(all_exteriors)
+            total_holes = len(all_holes)
+            shapes_with_holes = sum(stat['shapes_with_holes'] for stat in file_stats)
+            
+            holes_stats = {
+                'summary': {
+                    'height_mm': height,
+                    'total_files_analyzed': len(clf_files),
+                    'total_shapes': total_shapes,
+                    'total_exterior_shapes': total_exteriors,
+                    'total_holes': total_holes,
+                    'shapes_with_holes': shapes_with_holes,
+                    'percentage_with_holes': (shapes_with_holes / total_exteriors * 100) if total_exteriors > 0 else 0
+                },
+                'file_stats': file_stats
+            }
+            
+            print(f"Holes analysis summary:")
+            print(f"  - Total shapes: {total_shapes}")
+            print(f"  - Exterior shapes: {total_exteriors}")
+            print(f"  - Total holes: {total_holes}")
+            print(f"  - Shapes with holes: {shapes_with_holes}")
+            
+            # Create holes visualization
+            holes_vis_path = None
+            if all_exteriors or all_holes:
+                print("Generating holes visualization...")
+                
+                # Set up figure for web display
+                import matplotlib.pyplot as plt
+                from matplotlib.patches import Polygon
+                
+                fig = plt.figure(figsize=(12, 12))
+                ax = plt.gca()
+                ax.set_position([0, 0, 1, 1])
+                plt.xlim(-125, 125)
+                plt.ylim(-125, 125)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_xticklabels([])
+                ax.set_yticklabels([])
+                plt.axis('off')
+                
+                # Define colors for different CLF files
+                colors = {
+                    'Part.clf': '#2E86AB',
+                    'WaferSupport.clf': '#A23B72',
+                    'Net.clf': '#F18F01'
+                }
+                
+                # Draw exterior shapes (filled with transparency)
+                for ext_shape in all_exteriors:
+                    color = colors.get(ext_shape['clf_file'], '#666666')
+                    points = ext_shape['points']
+                    polygon = Polygon(points, facecolor=color, alpha=0.4, 
+                                    edgecolor=color, linewidth=1)
+                    ax.add_patch(polygon)
+                
+                # Draw holes (bright red for visibility)
+                for hole in all_holes:
+                    points = hole['points']
+                    hole_polygon = Polygon(points, facecolor='red', alpha=0.8, 
+                                         edgecolor='darkred', linewidth=2)
+                    ax.add_patch(hole_polygon)
+                
+                plt.axis('equal')
+                
+                # Save holes visualization
+                holes_filename = f'holes_analysis_{height}mm.png'
+                holes_output_path = os.path.join(output_dir, "holes_analysis", holes_filename)
+                os.makedirs(os.path.dirname(holes_output_path), exist_ok=True)
+                
+                from utils.myfuncs.plotTools import save_platform_figure
+                save_platform_figure(plt, holes_output_path, pad_inches=0)
+                
+                holes_vis_path = os.path.join("holes_analysis", holes_filename)
+                print(f"Saved holes visualization: {holes_output_path}")
+                
+                plt.close(fig)
+            
+            return holes_vis_path, holes_stats
+            
+        except Exception as e:
+            print(f"Error in holes analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, None
 
 
 def analyze_build_for_web(build_folder_path, height_mm, exclude_folders=True, identifiers=None, clf_files=None):

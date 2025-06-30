@@ -167,24 +167,28 @@ The CLF files contain sophisticated e-beam toolpaths with multiple scanning stra
 The **dotted lines (CW winding)** represent **INFILL/HATCHING** scan patterns, while the **solid lines (CCW winding)** represent **OUTLINE/PERIMETER** scan patterns. This is a sophisticated dual-strategy e-beam approach:
 
 #### 🔥 Solid Lines (CCW) = Primary Fusion Paths
+
 - Outline scanning for precise boundary definition
 - Higher beam power for complete material fusion
 - Counter-clockwise movement for consistent heat distribution
 - Creates the strong outer shell structure
 
 #### ❄️ Dotted Lines (CW) = Secondary Processing Paths
+
 - Infill/hatching scanning for internal structure
 - Different beam parameters (possibly lower power/different speed)
 - Clockwise movement optimizes scan efficiency
 - Provides internal density and structural integrity
 
 #### 🏭 Why This Pattern Makes Sense:
+
 - **Thermal Management**: Different scan directions reduce thermal stress
 - **Part Quality**: Outline + infill strategy improves mechanical properties
 - **Efficiency**: Optimized beam paths reduce manufacturing time
 - **Precision**: Separate strategies for boundaries vs. internal volume
 
 #### 🤔 What's Surprising:
+
 - Both paths are substantial (not just thin support lines)
 - Similar areas in banana shape suggests equally important scan strategies
 - True hole pattern in ellipse shows sophisticated void management
@@ -197,21 +201,27 @@ This reveals that CLF files contain sophisticated e-beam toolpaths with multiple
 To perform your own e-beam path analysis:
 
 1. **Extract shape data from CLF file:**
+
    ```bash
    python detailed_shape_analysis.py
    ```
+
    This creates `shape_analysis_data_134.0mm.json` with detailed path information.
 
 2. **Analyze e-beam patterns:**
+
    ```bash
    python ebeam_analysis.py
    ```
+
    This provides comprehensive analysis of scan strategies and manufacturing context.
 
 3. **Generate visualizations:**
+
    ```bash
    python visualize_clf_shapes.py
    ```
+
    Creates PNG files showing path relationships and geometric analysis.
 
 4. **View summary:**
