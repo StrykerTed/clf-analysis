@@ -82,6 +82,28 @@ python src/tools/get_platform_paths_shapes_shapely.py
 python examples/example_clf.py
 ```
 
+### Analyze CLF Shape Data
+
+First, extract detailed shape information from a specific CLF file:
+
+```bash
+python detailed_shape_analysis.py
+```
+
+Then analyze the e-beam patterns and manufacturing context:
+
+```bash
+python ebeam_analysis.py
+```
+
+### Create Visualizations
+
+Generate comprehensive visualizations of CLF shapes and paths:
+
+```bash
+python visualize_clf_shapes.py
+```
+
 ### Run Tests
 
 ```bash
@@ -135,6 +157,70 @@ points = xypoints.transform(xy2uv).round().tolist()
 plt.circles(points=points, color=(0, 255, 0), size=5)
 plt.show(scale=0.6)
 ```
+
+## ⚡ E-beam Path Analysis
+
+### Understanding CLF Path Patterns
+
+The CLF files contain sophisticated e-beam toolpaths with multiple scanning strategies per layer. Our analysis reveals that:
+
+The **dotted lines (CW winding)** represent **INFILL/HATCHING** scan patterns, while the **solid lines (CCW winding)** represent **OUTLINE/PERIMETER** scan patterns. This is a sophisticated dual-strategy e-beam approach:
+
+#### 🔥 Solid Lines (CCW) = Primary Fusion Paths
+- Outline scanning for precise boundary definition
+- Higher beam power for complete material fusion
+- Counter-clockwise movement for consistent heat distribution
+- Creates the strong outer shell structure
+
+#### ❄️ Dotted Lines (CW) = Secondary Processing Paths
+- Infill/hatching scanning for internal structure
+- Different beam parameters (possibly lower power/different speed)
+- Clockwise movement optimizes scan efficiency
+- Provides internal density and structural integrity
+
+#### 🏭 Why This Pattern Makes Sense:
+- **Thermal Management**: Different scan directions reduce thermal stress
+- **Part Quality**: Outline + infill strategy improves mechanical properties
+- **Efficiency**: Optimized beam paths reduce manufacturing time
+- **Precision**: Separate strategies for boundaries vs. internal volume
+
+#### 🤔 What's Surprising:
+- Both paths are substantial (not just thin support lines)
+- Similar areas in banana shape suggests equally important scan strategies
+- True hole pattern in ellipse shows sophisticated void management
+- Path complexity indicates advanced manufacturing optimization
+
+This reveals that CLF files contain sophisticated e-beam toolpaths with multiple scanning strategies per layer - much more complex than simple outline-only printing!
+
+### Running E-beam Analysis
+
+To perform your own e-beam path analysis:
+
+1. **Extract shape data from CLF file:**
+   ```bash
+   python detailed_shape_analysis.py
+   ```
+   This creates `shape_analysis_data_134.0mm.json` with detailed path information.
+
+2. **Analyze e-beam patterns:**
+   ```bash
+   python ebeam_analysis.py
+   ```
+   This provides comprehensive analysis of scan strategies and manufacturing context.
+
+3. **Generate visualizations:**
+   ```bash
+   python visualize_clf_shapes.py
+   ```
+   Creates PNG files showing path relationships and geometric analysis.
+
+4. **View summary:**
+   ```bash
+   python analysis_summary.py
+   ```
+   Displays key findings and generated files.
+
+The analysis will reveal the dual-strategy e-beam approach used in your CLF files, helping you understand the sophisticated manufacturing patterns encoded in the data.
 
 ## 🏗️ Project Structure
 
