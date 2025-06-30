@@ -77,9 +77,10 @@ function initializeBuildSelection() {
             if (selectedBuild) {
                 const height = getValidatedHeight();
                 const identifiers = parseIdentifierInput();
+                const clfFiles = getSelectedClfFiles();
                 
                 if (height !== null && identifiers !== false) {
-                    analyzeBuild(selectedBuild, height, identifiers);
+                    analyzeBuild(selectedBuild, height, identifiers, clfFiles);
                 }
             }
         });
@@ -102,6 +103,9 @@ function initializeBuildSelection() {
             }
         });
     }
+    
+    // Initialize advanced CLF file filtering
+    initializeAdvancedFiltering();
     
     if (heightInput) {
         // Add input validation and formatting
@@ -372,6 +376,20 @@ function createBuildCard(build) {
 function selectBuild(build, cardElement) {
     selectedBuild = build;
     
+    // Reset advanced filtering when switching builds
+    advancedFilteringInitialized = false;
+    selectedClfFiles.clear();
+    
+    // Hide the advanced filtering panel
+    const clfFilterPanel = document.getElementById('clf-filter-panel');
+    const advancedFilterBtn = document.getElementById('advanced-filter-btn');
+    if (clfFilterPanel) {
+        clfFilterPanel.style.display = 'none';
+    }
+    if (advancedFilterBtn) {
+        advancedFilterBtn.textContent = '🔧 Configure CLF Files';
+    }
+    
     // Remove previous selection
     document.querySelectorAll('.build-card').forEach(card => {
         card.classList.remove('selected');
@@ -404,12 +422,24 @@ function selectBuild(build, cardElement) {
 }
 
 // Analyze selected build
-function analyzeBuild(build, height, identifiers = null) {
+function analyzeBuild(build, height, identifiers = null, clfFiles = null) {
     if (!build || height === null || height === undefined) return;
+    
+    // Get CLF files selection if not provided
+    if (clfFiles === null) {
+        clfFiles = getSelectedClfFiles(); // This will be null if advanced filtering not used
+    }
     
     let notificationMsg = `Starting CLF analysis of Build ${build.build_number} at height ${height}mm`;
     if (identifiers && identifiers.length > 0) {
         notificationMsg += ` for parts: ${identifiers.join(', ')}`;
+    }
+    if (clfFiles !== null) {
+        if (clfFiles.length > 0) {
+            notificationMsg += ` with ${clfFiles.length} selected CLF files`;
+        } else {
+            notificationMsg += ` with no CLF files selected`;
+        }
     }
     notificationMsg += '...';
     
@@ -422,7 +452,8 @@ function analyzeBuild(build, height, identifiers = null) {
         build_number: build.build_number,
         height_mm: height,
         build_folder: build.folder_name,
-        identifiers: identifiers // null means all identifiers, array means specific ones
+        identifiers: identifiers, // null means all identifiers, array means specific ones
+        clf_files: clfFiles // null means use all CLF files, array means specific file paths (or empty for none)
     };
     
     fetch(`/api/builds/${build.build_number}/analyze`, {
@@ -796,3 +827,177 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// Advanced CLF File Filtering
+let availableClfFiles = [];
+let selectedClfFiles = new Set();
+let advancedFilteringInitialized = false; // Track if user has opened the panel
+
+function initializeAdvancedFiltering() {
+    const advancedFilterBtn = document.getElementById('advanced-filter-btn');
+    const clfFilterPanel = document.getElementById('clf-filter-panel');
+    const clfCheckAll = document.getElementById('clf-check-all');
+    const clfUncheckAll = document.getElementById('clf-uncheck-all');
+    
+    if (advancedFilterBtn && clfFilterPanel) {
+        advancedFilterBtn.addEventListener('click', function() {
+            if (clfFilterPanel.style.display === 'none' || clfFilterPanel.style.display === '') {
+                clfFilterPanel.style.display = 'block';
+                advancedFilterBtn.textContent = '🔧 Hide CLF Files';
+                
+                // Mark that user has explicitly opened advanced filtering
+                advancedFilteringInitialized = true;
+                
+                // Load CLF files for selected build
+                if (selectedBuild) {
+                    loadClfFilesForBuild(selectedBuild);
+                }
+            } else {
+                clfFilterPanel.style.display = 'none';
+                advancedFilterBtn.textContent = '🔧 Configure CLF Files';
+            }
+        });
+    }
+    
+    if (clfCheckAll) {
+        clfCheckAll.addEventListener('click', function() {
+            checkAllClfFiles(true);
+        });
+    }
+    
+    if (clfUncheckAll) {
+        clfUncheckAll.addEventListener('click', function() {
+            checkAllClfFiles(false);
+        });
+    }
+}
+
+function loadClfFilesForBuild(build) {
+    const container = document.getElementById('clf-files-container');
+    const countElement = document.getElementById('clf-count');
+    
+    if (!container || !build) return;
+    
+    // Show loading state
+    container.innerHTML = `
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading CLF files...</p>
+        </div>
+    `;
+    
+    // Fetch CLF files for this build
+    fetch(`/api/builds/${build.build_number}/clf-files`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                availableClfFiles = data.clf_files || [];
+                selectedClfFiles = new Set(availableClfFiles.map(f => f.path)); // Select all by default
+                renderClfFilesList();
+                updateClfCount();
+            } else {
+                container.innerHTML = `
+                    <div class="loading-state">
+                        <p style="color: #dc3545;">Failed to load CLF files: ${data.message || 'Unknown error'}</p>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading CLF files:', error);
+            container.innerHTML = `
+                <div class="loading-state">
+                    <p style="color: #dc3545;">Error loading CLF files: ${error.message}</p>
+                </div>
+            `;
+        });
+}
+
+function renderClfFilesList() {
+    const container = document.getElementById('clf-files-container');
+    if (!container || availableClfFiles.length === 0) return;
+    
+    const filesGrid = document.createElement('div');
+    filesGrid.className = 'clf-files-grid';
+    
+    availableClfFiles.forEach(file => {
+        const fileItem = document.createElement('div');
+        fileItem.className = `clf-file-item ${selectedClfFiles.has(file.path) ? '' : 'excluded'}`;
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'clf-file-checkbox';
+        checkbox.checked = selectedClfFiles.has(file.path);
+        checkbox.addEventListener('change', function() {
+            if (this.checked) {
+                selectedClfFiles.add(file.path);
+                fileItem.classList.remove('excluded');
+            } else {
+                selectedClfFiles.delete(file.path);
+                fileItem.classList.add('excluded');
+            }
+            updateClfCount();
+        });
+        
+        const fileInfo = document.createElement('div');
+        fileInfo.className = 'clf-file-info';
+        
+        const fileName = document.createElement('div');
+        fileName.className = 'clf-file-name';
+        fileName.textContent = file.name;
+        fileName.title = file.name;
+        
+        const fileFolder = document.createElement('div');
+        fileFolder.className = 'clf-file-folder';
+        fileFolder.textContent = file.folder;
+        fileFolder.title = file.folder;
+        
+        fileInfo.appendChild(fileName);
+        fileInfo.appendChild(fileFolder);
+        
+        fileItem.appendChild(checkbox);
+        fileItem.appendChild(fileInfo);
+        
+        // Make the whole item clickable
+        fileItem.addEventListener('click', function(e) {
+            if (e.target !== checkbox) {
+                checkbox.click();
+            }
+        });
+        
+        filesGrid.appendChild(fileItem);
+    });
+    
+    container.innerHTML = '';
+    container.appendChild(filesGrid);
+}
+
+function checkAllClfFiles(checked) {
+    if (checked) {
+        selectedClfFiles = new Set(availableClfFiles.map(f => f.path));
+    } else {
+        selectedClfFiles.clear();
+    }
+    
+    renderClfFilesList();
+    updateClfCount();
+}
+
+function updateClfCount() {
+    const countElement = document.getElementById('clf-count');
+    if (countElement) {
+        const total = availableClfFiles.length;
+        const selected = selectedClfFiles.size;
+        countElement.textContent = `${selected} of ${total} files selected`;
+    }
+}
+
+function getSelectedClfFiles() {
+    // If user hasn't opened advanced filtering, return null to use all files
+    if (!advancedFilteringInitialized) {
+        return null;
+    }
+    
+    // Return the selected files array
+    return Array.from(selectedClfFiles);
+}

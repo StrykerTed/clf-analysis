@@ -66,6 +66,72 @@ def get_available_builds():
             'count': 0
         }), 500
 
+@app.route('/api/builds/<build_number>/clf-files')
+def get_clf_files(build_number):
+    """Get list of CLF files for a specific build"""
+    try:
+        # Find the build folder
+        actual_build_folder = None
+        if os.path.exists(ABP_CONTENTS_PATH):
+            for folder in os.listdir(ABP_CONTENTS_PATH):
+                if f'build' in folder.lower() and build_number in folder:
+                    actual_build_folder = folder
+                    break
+        
+        if not actual_build_folder:
+            return jsonify({
+                'status': 'error',
+                'message': f'Build {build_number} not found'
+            }), 404
+        
+        # Get the full path to the build folder
+        build_folder_path = os.path.join(ABP_CONTENTS_PATH, actual_build_folder)
+        
+        # Import required modules for CLF analysis
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
+        from utils.myfuncs.file_utils import find_clf_files, load_exclusion_patterns, should_skip_folder
+        
+        # Find all CLF files
+        all_clf_files = find_clf_files(build_folder_path)
+        
+        # Load exclusion patterns and apply filtering (same as analysis)
+        exclusion_patterns = []
+        try:
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src', 'config')
+            exclusion_patterns = load_exclusion_patterns(config_dir)
+        except Exception as e:
+            print(f"Warning: Could not load exclusion patterns: {e}")
+        
+        # Apply exclusion patterns
+        clf_files = []
+        excluded_files = []
+        
+        for clf_info in all_clf_files:
+            should_skip = should_skip_folder(clf_info['folder'], exclusion_patterns)
+            if should_skip:
+                excluded_files.append(clf_info)
+            else:
+                clf_files.append(clf_info)
+        
+        # Sort by folder then by name
+        clf_files.sort(key=lambda x: (x['folder'], x['name']))
+        
+        return jsonify({
+            'status': 'success',
+            'build_number': build_number,
+            'clf_files': clf_files,
+            'total_files': len(clf_files),
+            'excluded_files': len(excluded_files),
+            'all_files_found': len(all_clf_files)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to get CLF files: {str(e)}'
+        }), 500
+
 @app.route('/api/builds/<build_number>/analyze', methods=['POST'])
 def analyze_build(build_number):
     """Analyze a specific build with height parameter"""
@@ -74,7 +140,8 @@ def analyze_build(build_number):
         data = request.get_json() if request.is_json else {}
         height_mm = data.get('height_mm', 0)
         build_folder = data.get('build_folder', '')
-        identifiers = data.get('identifiers', None)  # New: identifier filter
+        identifiers = data.get('identifiers', None)  # Identifier filter
+        clf_files = data.get('clf_files', None)  # New: CLF file filter
         
         # Validate height
         if not isinstance(height_mm, (int, float)) or height_mm < 0 or height_mm > 9999.99:
@@ -106,13 +173,16 @@ def analyze_build(build_number):
         print(f"Starting CLF analysis for build {build_number} at height {height_mm}mm")
         if identifiers:
             print(f"Filtering to identifiers: {identifiers}")
+        if clf_files:
+            print(f"Using {len(clf_files)} selected CLF files")
         
         # Perform the actual CLF analysis
         analysis_results = analyze_build_for_web(
             build_folder_path=build_folder_path,
             height_mm=height_mm,
             exclude_folders=True,  # Always exclude folders for web analysis
-            identifiers=identifiers  # New: pass identifier filter
+            identifiers=identifiers,  # Pass identifier filter
+            clf_files=clf_files  # New: pass CLF file filter
         )
         
         # Check if analysis was successful

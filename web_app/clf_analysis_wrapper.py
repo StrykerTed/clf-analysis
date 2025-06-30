@@ -40,7 +40,7 @@ class CLFWebAnalyzer:
         self.project_root = PROJECT_ROOT
         self.config_dir = os.path.join(self.project_root, "config")
         
-    def analyze_build(self, build_folder_path, height_mm, exclude_folders=True, identifiers=None):
+    def analyze_build(self, build_folder_path, height_mm, exclude_folders=True, identifiers=None, clf_files=None):
         """
         Analyze a build at specified height and return visualization data
         
@@ -49,6 +49,7 @@ class CLFWebAnalyzer:
             height_mm: Height in millimeters to analyze
             exclude_folders: Whether to exclude folders based on patterns
             identifiers: List of specific identifier numbers to analyze, or None for all
+            clf_files: List of specific CLF file paths to analyze, or None for all
             
         Returns:
             dict with analysis results and visualization paths
@@ -58,6 +59,8 @@ class CLFWebAnalyzer:
             print(f"Analysis height: {height_mm}mm")
             if identifiers:
                 print(f"Filtering to identifiers: {identifiers}")
+            if clf_files:
+                print(f"Using {len(clf_files)} selected CLF files")
             
             # Validate inputs
             if not os.path.exists(build_folder_path):
@@ -86,7 +89,7 @@ class CLFWebAnalyzer:
             
             # Filter CLF files based on exclusion patterns
             if exclude_folders and exclusion_patterns:
-                clf_files = []
+                processed_clf_files = []
                 excluded_files = []
                 
                 for clf_info in all_clf_files:
@@ -94,14 +97,49 @@ class CLFWebAnalyzer:
                     if should_skip:
                         excluded_files.append(clf_info)
                     else:
-                        clf_files.append(clf_info)
+                        processed_clf_files.append(clf_info)
                 
                 print(f"Excluded {len(excluded_files)} files based on folder patterns")
-                print(f"Processing {len(clf_files)} CLF files")
+                print(f"Processing {len(processed_clf_files)} CLF files")
             else:
-                clf_files = all_clf_files
+                processed_clf_files = all_clf_files
                 excluded_files = []
-                print(f"Processing all {len(clf_files)} CLF files (no exclusions)")
+                print(f"Processing all {len(processed_clf_files)} CLF files (no exclusions)")
+            
+            # Apply user-selected CLF file filtering
+            if clf_files is not None:  # User has made a selection (could be empty list)
+                original_count = len(processed_clf_files)
+                if len(clf_files) > 0:
+                    # Filter to only include user-selected files
+                    processed_clf_files = [f for f in processed_clf_files if f['path'] in clf_files]
+                else:
+                    # User unchecked all files - process no files
+                    processed_clf_files = []
+                user_excluded = original_count - len(processed_clf_files)
+                print(f"User filtered {user_excluded} files, processing {len(processed_clf_files)} selected CLF files")
+                total_excluded = len(excluded_files) + user_excluded
+            else:
+                # No user filtering applied - use all processed files
+                total_excluded = len(excluded_files)
+            
+            # Use processed_clf_files for the rest of the analysis
+            final_clf_files = processed_clf_files
+            
+            # Check if any files remain for processing
+            if len(final_clf_files) == 0:
+                return {
+                    "timestamp": datetime.now().isoformat(),
+                    "build_folder": build_folder_path,
+                    "height_mm": height_mm,
+                    "exclude_folders": exclude_folders,
+                    "exclusion_patterns": exclusion_patterns,
+                    "total_files_found": len(all_clf_files),
+                    "files_processed": 0,
+                    "files_excluded": total_excluded,
+                    "temp_directory": temp_dir,
+                    "visualizations": {},
+                    "message": "No CLF files selected for processing"
+                }
             
             # Create analysis results
             analysis_results = {
@@ -111,8 +149,8 @@ class CLFWebAnalyzer:
                 "exclude_folders": exclude_folders,
                 "exclusion_patterns": exclusion_patterns,
                 "total_files_found": len(all_clf_files),
-                "files_processed": len(clf_files),
-                "files_excluded": len(excluded_files),
+                "files_processed": len(final_clf_files),
+                "files_excluded": total_excluded,
                 "temp_directory": temp_dir,
                 "visualizations": {}
             }
@@ -124,7 +162,7 @@ class CLFWebAnalyzer:
                 if identifiers is not None:
                     # Use custom visualization with identifier filtering
                     clean_file = self.create_filtered_clean_platform(
-                        clf_files, 
+                        final_clf_files, 
                         temp_dir,
                         height=height_mm,
                         identifiers=identifiers,
@@ -134,7 +172,7 @@ class CLFWebAnalyzer:
                 else:
                     # Use standard visualization for all identifiers
                     clean_file = create_clean_platform(
-                        clf_files, 
+                        final_clf_files, 
                         temp_dir,
                         height=height_mm,
                         fill_closed=True,  # Fill closed shapes for better visualization
@@ -175,7 +213,7 @@ class CLFWebAnalyzer:
             
             # Add file details to results
             analysis_results["processed_files"] = []
-            for clf_info in clf_files:
+            for clf_info in final_clf_files:
                 try:
                     part = CLFFile(clf_info['path'])
                     file_detail = {
@@ -428,7 +466,7 @@ class CLFWebAnalyzer:
             return None
 
 
-def analyze_build_for_web(build_folder_path, height_mm, exclude_folders=True, identifiers=None):
+def analyze_build_for_web(build_folder_path, height_mm, exclude_folders=True, identifiers=None, clf_files=None):
     """
     Convenience function for web app to analyze a build
     
@@ -437,12 +475,13 @@ def analyze_build_for_web(build_folder_path, height_mm, exclude_folders=True, id
         height_mm: Height in millimeters to analyze
         exclude_folders: Whether to exclude folders based on patterns
         identifiers: List of specific identifier numbers to analyze, or None for all
+        clf_files: List of specific CLF file paths to analyze, or None for all
         
     Returns:
         dict with analysis results
     """
     analyzer = CLFWebAnalyzer()
-    return analyzer.analyze_build(build_folder_path, height_mm, exclude_folders, identifiers)
+    return analyzer.analyze_build(build_folder_path, height_mm, exclude_folders, identifiers, clf_files)
 
 
 if __name__ == "__main__":

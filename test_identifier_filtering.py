@@ -29,7 +29,7 @@ def test_identifier_filtering():
     
     # Test build path
     test_build_path = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_contents/build-431627"
-    test_height = 1.0
+    test_height = 135.8
     
     print("=" * 60)
     print("TESTING IDENTIFIER FILTERING FUNCTIONALITY")

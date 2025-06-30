@@ -154,6 +154,32 @@
                                     </div>
                                 </div>
                                 
+                                <!-- Advanced CLF File Filtering -->
+                                <div class="analysis-option">
+                                    <h4>⚙️ Advanced Filtering</h4>
+                                    <p class="option-description">Select specific CLF files to include in the analysis.</p>
+                                    <button class="advanced-filter-btn" id="advanced-filter-btn" type="button">
+                                        🔧 Configure CLF Files
+                                    </button>
+                                    
+                                    <div class="clf-filter-panel" id="clf-filter-panel" style="display: none;">
+                                        <div class="clf-filter-header">
+                                            <div class="clf-filter-controls">
+                                                <button class="clf-control-btn" id="clf-check-all" type="button">✅ Check All</button>
+                                                <button class="clf-control-btn" id="clf-uncheck-all" type="button">❌ Uncheck All</button>
+                                                <span class="clf-count" id="clf-count">Loading...</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="clf-files-container" id="clf-files-container">
+                                            <div class="loading-state">
+                                                <div class="spinner"></div>
+                                                <p>Loading CLF files...</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <button class="analyze-btn" id="analyze-btn" disabled>📊 Analyze Build</button>
                             </div>
                         </div>

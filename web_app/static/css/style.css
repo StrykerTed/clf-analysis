@@ -618,6 +618,181 @@ main {
     color: #e74c3c;
 }
 
+/* Advanced CLF File Filtering Styles */
+.advanced-filter-btn {
+    background: #17a2b8;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.advanced-filter-btn:hover {
+    background: #138496;
+    transform: translateY(-1px);
+}
+
+.clf-filter-panel {
+    margin-top: 16px;
+    padding: 16px;
+    background: white;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.clf-filter-header {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.clf-filter-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.clf-control-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    font-weight: 500;
+}
+
+.clf-control-btn:hover {
+    background: #5a6268;
+}
+
+.clf-control-btn:first-child {
+    background: #28a745;
+}
+
+.clf-control-btn:first-child:hover {
+    background: #218838;
+}
+
+.clf-control-btn:nth-child(2) {
+    background: #dc3545;
+}
+
+.clf-control-btn:nth-child(2):hover {
+    background: #c82333;
+}
+
+.clf-count {
+    font-size: 0.9rem;
+    color: #6c757d;
+    font-weight: 500;
+    margin-left: auto;
+}
+
+.clf-files-container {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #f8f9fa;
+}
+
+.clf-files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 8px;
+    padding: 12px;
+}
+
+.clf-file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.clf-file-item:hover {
+    background: #f0f9ff;
+    border-color: #17a2b8;
+}
+
+.clf-file-item.excluded {
+    background: #fff5f5;
+    border-color: #fed7d7;
+}
+
+.clf-file-item.excluded:hover {
+    background: #ffeef0;
+}
+
+.clf-file-checkbox {
+    margin: 0;
+    cursor: pointer;
+}
+
+.clf-file-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.clf-file-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #2c3e50;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.clf-file-folder {
+    font-size: 0.75rem;
+    color: #6c757d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.clf-files-container .loading-state {
+    padding: 20px;
+    text-align: center;
+    color: #6c757d;
+}
+
+/* Responsive adjustments for CLF filtering */
+@media (max-width: 768px) {
+    .clf-files-grid {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+    
+    .clf-filter-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .clf-count {
+        margin-left: 0;
+        text-align: center;
+    }
+}
+
 .analyze-btn {
     background: #f39c12;
     color: white;

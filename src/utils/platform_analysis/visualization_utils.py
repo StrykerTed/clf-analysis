@@ -504,7 +504,7 @@ def process_layer_data(clf_info, height, colors):
                 if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
                     shape_identifier = shape.model.id
                 if hasattr(shape, 'points') and shape.points:
-                    points = shape.points[0]
+                    points = shape.points[0]  # Only process the first path (exterior boundary)
                     if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
                         should_close = False
                         # Safely call should_close_path
@@ -552,7 +552,8 @@ def process_layer_data(clf_info, height, colors):
                         'clf_name': clf_info['name'],
                         'clf_folder': clf_info['folder'],
                         'fill_closed': True,  # Set default
-                        'identifier': shape_identifier
+                        'identifier': shape_identifier,
+                        'is_hole': False
                     }
                     shape_data_list.append(shape_data)
                 else:

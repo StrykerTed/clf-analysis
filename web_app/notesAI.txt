@@ -1,2 +1,3 @@
 always use port 5000. if that port is in use, cancel the process and then use 5000. 
 always use venv
+use cd /Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean && python3 start_web_app.py
