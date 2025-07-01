@@ -45,7 +45,8 @@ from utils.platform_analysis.visualization_utils import (
     create_identifier_platform_view,
     create_platform_composite_with_folders, 
     create_platform_composite,
-    create_clean_platform
+    create_clean_platform,
+    create_combined_holes_platform_view
 )
 
 from utils.platform_analysis.data_processing import (
@@ -136,15 +137,6 @@ def main():
         logger.info(f"  - Save Clean PNG: {save_clean_png}")
         logger.info(f"  - Alignment Style Only: {alignment_style_only}")
         logger.info(f"  - Draw Excluded Paths: {draw_excluded}")
-
-        # Only ask for height mode if saving clean platforms
-        clean_heights = None
-        if save_clean:
-            height_choice = 'full'
-            if height_choice == 'full':
-                logger.info("Will process full range of heights at 0.05mm intervals")
-            else:
-                logger.info("Will process sample heights only")
 
         # Load exclusion patterns
         exclusion_patterns = load_exclusion_patterns(config_dir) if exclude_folders else []
@@ -361,6 +353,16 @@ def main():
             }
             print(f"Created combined identifier view with {platform_info['combined_identifier_view']['total_identifiers']} identifiers")
 
+        # Create combined holes platform view
+        print("\nGenerating combined holes platform view...")
+        holes_view_file, holes_stats = create_combined_holes_platform_view(clf_files, output_dir, height=134.0)
+        if holes_view_file:
+            platform_info["combined_holes_view"] = {
+                "filename": holes_view_file,
+                "holes_statistics": holes_stats
+            }
+            print(f"Created combined holes view with {holes_stats['total_holes']} holes found in {holes_stats['files_with_holes']} files")
+
         # Create combined view of excluded identifiers if requested
         if draw_excluded and excluded_shapes_by_identifier:
             print("\nGenerating combined EXCLUDED identifier platform view...")
@@ -440,21 +442,21 @@ def main():
             except Exception as e:
                 print(f"Error creating composite at height {height}mm: {str(e)}")
 
-        # Create clean platform views with full or sample heights
+        # Create clean platform views - process all heights for JSON but only create PNGs for selected heights
         if save_clean:
             print("\nGenerating clean platform views...")
-            if height_choice == 'full':
-                max_height = get_max_layer_height(clf_files)
-                clean_heights = generate_full_layer_heights(max_height)
-                print(f"Processing all layers from 0.0500mm to {max_height}mm at 0.05mm intervals")
-            else:
-                clean_heights = wanted_layer_heights
-                print(f"Processing sample layers: {clean_heights}")
+            # Get all heights for data processing
+            max_height = get_max_layer_height(clf_files)
+            all_heights = generate_full_layer_heights(max_height)
+            print(f"Processing all layers from 0.0500mm to {max_height}mm for JSON data")
+            print(f"Creating PNGs only for selected heights: {wanted_layer_heights}")
             
             # Process heights sequentially to avoid multiprocessing conflicts
-            print(f"Processing {len(clean_heights)} heights sequentially...")
+            print(f"Processing {len(all_heights)} heights sequentially...")
             
-            for height in clean_heights:
+            for height in all_heights:
+                # Only create PNG for heights that are in wanted_layer_heights
+                should_create_png = height in wanted_layer_heights
                 try:
                     print(f"Processing height {height}mm...")
                     clean_file = create_clean_platform(
@@ -463,17 +465,19 @@ def main():
                         height=height,
                         fill_closed=fill_closed,
                         alignment_style_only=alignment_style_only,
-                        save_clean_png=True
+                        save_clean_png=should_create_png
                     )
                     
-                    if clean_file:
+                    if should_create_png and clean_file:
                         platform_info["clean_platforms"].append({
                             "height": height,
                             "filename": clean_file
                         })
-                        print(f"Created clean platform at {height}mm: {clean_file}")
+                        print(f"Created clean platform PNG at {height}mm: {clean_file}")
+                    elif should_create_png:
+                        print(f"No clean platform PNG file created for {height}mm")
                     else:
-                        print(f"No clean platform file created for {height}mm (save_clean_png=False)")
+                        print(f"Processed data for {height}mm (no PNG created - not in selected heights)")
                 except Exception as e:
                     print(f"Error creating clean platform at height {height}mm: {str(e)}")
         

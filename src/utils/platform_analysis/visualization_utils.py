@@ -484,7 +484,8 @@ def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=Fal
 
 def process_layer_data(clf_info, height, colors):
     """Helper function to process a single layer and extract shape data.
-    Used by create_clean_platform for parallel processing."""
+    Used by create_clean_platform for parallel processing.
+    Now includes hole detection using geometric containment."""
     shape_data_list = []
     
     try:
@@ -497,82 +498,142 @@ def process_layer_data(clf_info, height, colors):
             return shape_data_list
             
         if hasattr(layer, 'shapes'):
-            for shape in layer.shapes:
+            shapes = list(layer.shapes)
+            
+            # First pass: process all shapes as potential exteriors
+            processed_shapes = []
+            for i, shape in enumerate(shapes):
                 color = colors.get(clf_info['name'], 'gray')
-                # --- Gather shape identifier if it exists ---
                 shape_identifier = None
                 if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
                     shape_identifier = shape.model.id
+                    
                 if hasattr(shape, 'points') and shape.points:
                     points = shape.points[0]  # Only process the first path (exterior boundary)
                     if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
                         should_close = False
-                        # Safely call should_close_path
                         try:
                             should_close = should_close_path(points)
-                            # Convert numpy bool to Python bool if needed
                             if hasattr(should_close, 'item'):
                                 should_close = should_close.item()
                         except Exception as e:
                             print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
                             should_close = False
                         
-                        # Collect shape data
-                        shape_data = {
-                            'type': 'path',
-                            'points': points.tolist(),
+                        processed_shapes.append({
+                            'index': i,
+                            'points': points,
+                            'identifier': shape_identifier,
                             'color': color,
-                            'clf_name': clf_info['name'],
-                            'clf_folder': clf_info['folder'],
-                            'fill_closed': True,  # Set default, will be updated by main function
-                            'should_close': should_close,
-                            'identifier': shape_identifier
-                        }
-                        shape_data_list.append(shape_data)
-                    else:
-                        # Handle invalid points data
-                        print(f"Invalid points in shape in {clf_info['name']}")
-                        shape_data = {
-                            'type': 'invalid',
-                            'points': None,
-                            'color': color,
-                            'clf_name': clf_info['name'],
-                            'clf_folder': clf_info['folder'],
-                            'fill_closed': True,  # Set default
-                            'identifier': shape_identifier
-                        }
-                        shape_data_list.append(shape_data)
+                            'should_close': should_close
+                        })
+                        
                 elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
-                    # Collect circle data
+                    # Handle circles (add them directly as they don't have holes in this context)
                     shape_data = {
                         'type': 'circle',
+                        'shape_type': 'exterior',  # Circles are always exterior
                         'center': shape.center.tolist(),
                         'radius': shape.radius,
                         'color': color,
                         'clf_name': clf_info['name'],
                         'clf_folder': clf_info['folder'],
-                        'fill_closed': True,  # Set default
+                        'fill_closed': True,
                         'identifier': shape_identifier,
+                        'parent_shape_id': None,
                         'is_hole': False
                     }
                     shape_data_list.append(shape_data)
-                else:
-                    # Handle other shape types if necessary
-                    print(f"Unrecognized shape type in {clf_info['name']}")
-                    shape_data = {
-                        'type': 'unknown',
-                        'color': color,
-                        'clf_name': clf_info['name'],
-                        'clf_folder': clf_info['folder'],
-                        'fill_closed': True,  # Set default
-                        'identifier': shape_identifier
-                    }
-                    shape_data_list.append(shape_data)
-                 
+            
+            # Second pass: detect holes using geometric containment
+            hole_relationships = []
+            for i, shape1 in enumerate(processed_shapes):
+                for j, shape2 in enumerate(processed_shapes):
+                    if i == j:
+                        continue
+                    
+                    # Check if shape2 is inside shape1 (shape2 is a hole in shape1)
+                    if is_shape_inside_shape(shape2['points'], shape1['points']):
+                        hole_relationships.append({
+                            'hole_index': j,
+                            'parent_index': i,
+                            'hole_id': shape2['identifier'],
+                            'parent_id': shape1['identifier']
+                        })
+                        print(f"  Found hole: Shape {j} (ID:{shape2['identifier']}) inside Shape {i} (ID:{shape1['identifier']})")
+            
+            # Third pass: create shape data with hole information
+            hole_indices = set(rel['hole_index'] for rel in hole_relationships)
+            
+            for i, shape_info in enumerate(processed_shapes):
+                is_hole = i in hole_indices
+                parent_info = None
+                
+                if is_hole:
+                    # Find parent information
+                    for rel in hole_relationships:
+                        if rel['hole_index'] == i:
+                            parent_info = rel
+                            break
+                
+                shape_data = {
+                    'type': 'path',
+                    'shape_type': 'hole' if is_hole else 'exterior',
+                    'points': shape_info['points'].tolist(),
+                    'color': shape_info['color'],
+                    'clf_name': clf_info['name'],
+                    'clf_folder': clf_info['folder'],
+                    'fill_closed': True,  # Set default, will be updated by main function
+                    'should_close': shape_info['should_close'],
+                    'identifier': shape_info['identifier'],
+                    'parent_shape_id': parent_info['parent_id'] if parent_info else None,
+                    'parent_shape_index': parent_info['parent_index'] if parent_info else None,
+                    'is_hole': is_hole
+                }
+                shape_data_list.append(shape_data)
+                
+            print(f"  Processed {len(processed_shapes)} shapes, found {len(hole_relationships)} holes in {clf_info['name']}")
+                        
     except Exception as e:
-        print(f"Error processing {clf_info['name']} for clean platform: {str(e)}")
+        print(f"Error processing {clf_info['name']} at height {height}mm: {str(e)}")
+        import traceback
+        traceback.print_exc()
     
     return shape_data_list
+
+
+def is_shape_inside_shape(inner_points, outer_points):
+    """
+    Check if inner_points shape is geometrically contained within outer_points shape
+    
+    Args:
+        inner_points: numpy array of points for the inner shape
+        outer_points: numpy array of points for the outer shape
+        
+    Returns:
+        bool: True if inner shape is inside outer shape
+    """
+    try:
+        import numpy as np
+        from matplotlib.path import Path
+        
+        # Create a path from the outer shape
+        outer_path = Path(outer_points)
+        
+        # Check if all points of the inner shape are inside the outer path
+        # We'll check a few sample points to be efficient
+        sample_indices = np.linspace(0, len(inner_points)-1, min(10, len(inner_points)), dtype=int)
+        sample_points = inner_points[sample_indices]
+        
+        # All sample points should be inside the outer shape
+        inside_checks = outer_path.contains_points(sample_points)
+        
+        # Return True if most points are inside (allowing for edge cases)
+        return np.sum(inside_checks) >= len(inside_checks) * 0.8
+        
+    except Exception as e:
+        print(f"Error in geometric containment check: {e}")
+        return False
 
 
 def create_transparent_paths_view(shapes_by_identifier, output_dir):
@@ -828,3 +889,196 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
         print(f"Error saving shape data for clean platform at height {height}mm: {str(e)}")
         
     return png_path
+
+
+def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
+    """Create a platform view showing all detected holes across all CLF files at a specific height.
+    Similar to combined_identifier_platform_view but focuses on holes detection."""
+    try:
+        print(f"Creating combined holes platform view at {height}mm...")
+        
+        # Define colors for different CLF files
+        colors = {
+            'Part.clf': '#2E86AB',
+            'WaferSupport.clf': '#A23B72', 
+            'Net.clf': '#F18F01'
+        }
+        
+        all_exteriors = []
+        all_holes = []
+        holes_stats = {
+            'total_files': len(clf_files),
+            'files_with_holes': 0,
+            'total_exteriors': 0,
+            'total_holes': 0,
+            'file_details': []
+        }
+        
+        # Process each CLF file to find holes
+        for clf_info in clf_files:
+            try:
+                part = CLFFile(clf_info['path'])
+                layer = part.find(height)
+                
+                if layer is None or not hasattr(layer, 'shapes'):
+                    continue
+                
+                shapes = list(layer.shapes)
+                color = colors.get(clf_info['name'], '#666666')
+                exteriors_in_file = 0
+                holes_in_file = 0
+                
+                # Process each shape pair to find holes using geometric containment
+                for i, shape1 in enumerate(shapes):
+                    if not hasattr(shape1, 'points') or not shape1.points:
+                        continue
+                        
+                    # Get identifier for shape1
+                    identifier1 = "unknown"
+                    if hasattr(shape1, 'model') and hasattr(shape1.model, 'id'):
+                        identifier1 = str(shape1.model.id)
+                    
+                    # Shape1 first path is always an exterior
+                    exterior_points = shape1.points[0]
+                    exterior_info = {
+                        'type': 'exterior',
+                        'points': exterior_points,
+                        'identifier': identifier1,
+                        'clf_file': clf_info['name'],
+                        'clf_folder': clf_info['folder'],
+                        'color': color,
+                        'shape_index': i
+                    }
+                    all_exteriors.append(exterior_info)
+                    exteriors_in_file += 1
+                    
+                    # Look for other shapes that might be holes inside this shape
+                    for j, shape2 in enumerate(shapes):
+                        if i == j:  # Skip same shape
+                            continue
+                        
+                        if not hasattr(shape2, 'points') or not shape2.points:
+                            continue
+                        
+                        # Get identifier for shape2  
+                        identifier2 = "unknown"
+                        if hasattr(shape2, 'model') and hasattr(shape2.model, 'id'):
+                            identifier2 = str(shape2.model.id)
+                        
+                        # Check if shape2 is inside shape1 using geometric containment
+                        shape2_points = shape2.points[0]  # Use first path of shape2
+                        
+                        if is_shape_inside_shape(shape2_points, exterior_points):
+                            print(f"    Found hole: Shape {j} (ID:{identifier2}) inside Shape {i} (ID:{identifier1}) in {clf_info['name']}")
+                            
+                            hole_info = {
+                                'type': 'hole',
+                                'points': shape2_points,
+                                'identifier': identifier2,
+                                'clf_file': clf_info['name'],
+                                'clf_folder': clf_info['folder'],
+                                'color': color,
+                                'shape_index': j,
+                                'parent_shape_index': i,
+                                'parent_identifier': identifier1
+                            }
+                            all_holes.append(hole_info)
+                            holes_in_file += 1
+                
+                # Add file statistics
+                if holes_in_file > 0:
+                    holes_stats['files_with_holes'] += 1
+                
+                holes_stats['file_details'].append({
+                    'filename': clf_info['name'],
+                    'folder': clf_info['folder'],
+                    'exteriors': exteriors_in_file,
+                    'holes': holes_in_file
+                })
+                
+                print(f"  - {clf_info['name']}: {exteriors_in_file} exteriors, {holes_in_file} holes")
+                
+            except Exception as e:
+                print(f"Error processing {clf_info['name']} for holes: {e}")
+                continue
+        
+        # Update summary statistics
+        holes_stats['total_exteriors'] = len(all_exteriors)
+        holes_stats['total_holes'] = len(all_holes)
+        
+        print(f"Holes analysis summary:")
+        print(f"  - Total files: {holes_stats['total_files']}")
+        print(f"  - Files with holes: {holes_stats['files_with_holes']}")
+        print(f"  - Total exterior shapes: {holes_stats['total_exteriors']}")
+        print(f"  - Total holes found: {holes_stats['total_holes']}")
+        
+        # Create the visualization if we found any shapes
+        if all_exteriors or all_holes:
+            # Create figure
+            setup_platform_figure(figsize=(15, 15))
+            
+            # Add standard platform elements
+            draw_platform_boundary(plt)
+            add_reference_lines(plt)
+            
+            # Draw exterior shapes (semi-transparent)
+            for ext_shape in all_exteriors:
+                points = ext_shape['points']
+                color = ext_shape['color']
+                
+                # Draw as a filled polygon with low alpha
+                polygon = Polygon(points, facecolor=color, alpha=0.3, 
+                                edgecolor=color, linewidth=1)
+                plt.gca().add_patch(polygon)
+            
+            # Draw holes (bright red for high visibility)
+            for hole in all_holes:
+                points = hole['points']
+                
+                # Draw holes as solid red polygons for visibility
+                hole_polygon = Polygon(points, facecolor='red', alpha=0.8, 
+                                     edgecolor='darkred', linewidth=2)
+                plt.gca().add_patch(hole_polygon)
+            
+            # Create legend
+            legend_elements = []
+            for clf_name, color in colors.items():
+                if any(ext['clf_file'] == clf_name for ext in all_exteriors):
+                    legend_elements.append(plt.Rectangle((0,0),1,1, facecolor=color, alpha=0.3, 
+                                                       edgecolor=color, label=f'{clf_name} (Exteriors)'))
+            
+            if all_holes:
+                legend_elements.append(plt.Rectangle((0,0),1,1, facecolor='red', alpha=0.8, 
+                                                   edgecolor='darkred', label='Holes'))
+            
+            if legend_elements:
+                plt.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.05, 1), borderaxespad=0.)
+            
+            plt.title(f'Combined Holes Platform View at {height}mm\n'
+                     f'Total Files: {holes_stats["total_files"]} | '
+                     f'Files with Holes: {holes_stats["files_with_holes"]}\n'
+                     f'Exterior Shapes: {holes_stats["total_exteriors"]} | '
+                     f'Holes Found: {holes_stats["total_holes"]}')
+            
+            add_platform_labels(plt)
+            set_platform_limits(plt)
+            
+            # Save the holes view
+            holes_dir = os.path.join(output_dir, "holes_views")
+            os.makedirs(holes_dir, exist_ok=True)
+            filename = f'combined_holes_platform_view_{height}mm.png'
+            output_path = os.path.join(holes_dir, filename)
+            save_platform_figure(plt, output_path)
+            
+            print(f"Created combined holes view at: {output_path}")
+            return os.path.join("holes_views", filename), holes_stats
+        
+        else:
+            print("No shapes found for holes visualization")
+            return None, holes_stats
+            
+    except Exception as e:
+        print(f"Error creating combined holes platform view: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None, None
