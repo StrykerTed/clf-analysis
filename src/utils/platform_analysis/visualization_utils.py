@@ -509,24 +509,64 @@ def process_layer_data(clf_info, height, colors):
                     shape_identifier = shape.model.id
                     
                 if hasattr(shape, 'points') and shape.points:
-                    points = shape.points[0]  # Only process the first path (exterior boundary)
-                    if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
-                        should_close = False
-                        try:
-                            should_close = should_close_path(points)
-                            if hasattr(should_close, 'item'):
-                                should_close = should_close.item()
-                        except Exception as e:
-                            print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
+                    # Check if shape has multiple paths (potential holes)
+                    if len(shape.points) > 1:
+                        # Process each path separately - first path is exterior, others are holes
+                        for path_idx, points in enumerate(shape.points):
+                            if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
+                                should_close = False
+                                try:
+                                    should_close = should_close_path(points)
+                                    if hasattr(should_close, 'item'):
+                                        should_close = should_close.item()
+                                except Exception as e:
+                                    print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
+                                    should_close = False
+                                
+                                # Determine if this path is a hole based on path index
+                                is_hole = path_idx > 0  # First path (index 0) is exterior, others are holes
+                                shape_type = 'interior' if is_hole else 'exterior'
+                                
+                                # Create shape data for this path
+                                shape_data = {
+                                    'type': 'path',
+                                    'shape_type': shape_type,
+                                    'points': points.tolist(),
+                                    'color': color,
+                                    'clf_name': clf_info['name'],
+                                    'clf_folder': clf_info['folder'],
+                                    'fill_closed': True,  # Will be updated by main function
+                                    'should_close': should_close,
+                                    'identifier': shape_identifier,
+                                    'parent_shape_id': shape_identifier if is_hole else None,
+                                    'parent_shape_index': i if is_hole else None,
+                                    'is_hole': is_hole,
+                                    'path_index': path_idx
+                                }
+                                shape_data_list.append(shape_data)
+                                
+                                if is_hole:
+                                    print(f"  Found hole: Path {path_idx} in Shape {i} (ID:{shape_identifier}) in {clf_info['name']}")
+                    else:
+                        # Single path shape (no holes)
+                        points = shape.points[0]  # Only process the first path (exterior boundary)
+                        if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
                             should_close = False
-                        
-                        processed_shapes.append({
-                            'index': i,
-                            'points': points,
-                            'identifier': shape_identifier,
-                            'color': color,
-                            'should_close': should_close
-                        })
+                            try:
+                                should_close = should_close_path(points)
+                                if hasattr(should_close, 'item'):
+                                    should_close = should_close.item()
+                            except Exception as e:
+                                print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
+                                should_close = False
+                            
+                            processed_shapes.append({
+                                'index': i,
+                                'points': points,
+                                'identifier': shape_identifier,
+                                'color': color,
+                                'should_close': should_close
+                            })
                         
                 elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
                     # Handle circles (add them directly as they don't have holes in this context)
@@ -562,7 +602,7 @@ def process_layer_data(clf_info, height, colors):
                         })
                         print(f"  Found hole: Shape {j} (ID:{shape2['identifier']}) inside Shape {i} (ID:{shape1['identifier']})")
             
-            # Third pass: create shape data with hole information
+            # Third pass: create shape data with hole information for shapes processed via geometric containment
             hole_indices = set(rel['hole_index'] for rel in hole_relationships)
             
             for i, shape_info in enumerate(processed_shapes):
@@ -578,7 +618,7 @@ def process_layer_data(clf_info, height, colors):
                 
                 shape_data = {
                     'type': 'path',
-                    'shape_type': 'hole' if is_hole else 'exterior',
+                    'shape_type': 'interior' if is_hole else 'exterior',
                     'points': shape_info['points'].tolist(),
                     'color': shape_info['color'],
                     'clf_name': clf_info['name'],

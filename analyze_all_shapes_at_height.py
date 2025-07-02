@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Detailed Shape Analysis Script
-Focuses on analyzing shapes at height 134.00mm to extract all possible information
-about paths, especially the banana shape with ellipse inside.
+Analyze All Shapes at Height Script
+Runs detailed shape analysis for ALL CLF files at a given height,
+combining all shapes with holes into a single comprehensive view.
 """
 
 import os
@@ -20,10 +20,10 @@ import setup_paths
 from utils.pyarcam.clfutil import CLFFile
 from utils.myfuncs.file_utils import find_clf_files
 
-def extract_all_shape_attributes(shape, shape_index):
+def extract_all_shape_attributes(shape, shape_index, file_name):
     """Extract all possible attributes from a shape object"""
     print(f"\n{'='*80}")
-    print(f"🔍 DETAILED ANALYSIS OF SHAPE {shape_index + 1}")
+    print(f"🔍 DETAILED ANALYSIS OF SHAPE {shape_index + 1} FROM {file_name}")
     print(f"{'='*80}")
     
     # Basic shape information
@@ -150,12 +150,12 @@ def get_winding_direction(points):
     else:
         return "Degenerate"
 
-def analyze_path_relationships(shape, shape_index):
+def analyze_path_relationships(shape, shape_index, file_name):
     """Analyze relationships between paths in a multi-path shape"""
     if not hasattr(shape, 'points') or len(shape.points) < 2:
         return
     
-    print(f"\n🔗 PATH RELATIONSHIP ANALYSIS FOR SHAPE {shape_index + 1}:")
+    print(f"\n🔗 PATH RELATIONSHIP ANALYSIS FOR SHAPE {shape_index + 1} IN {file_name}:")
     print(f"{'='*60}")
     
     paths = shape.points
@@ -233,62 +233,128 @@ def is_point_in_polygon(point, polygon):
     
     return inside
 
-def save_path_data_to_json(shapes_data, output_file):
-    """Save extracted path data to JSON for further analysis"""
-    print(f"\n💾 Saving path data to: {output_file}")
+def save_combined_data_to_json(all_shapes_data, output_file, height):
+    """Save all extracted shape data to JSON for comprehensive analysis"""
+    print(f"\n💾 Saving combined shape data to: {output_file}")
     
-    serializable_data = []
+    combined_data = {
+        'analysis_height': height,
+        'total_files_analyzed': len(all_shapes_data),
+        'total_shapes': sum(len(file_data['shapes']) for file_data in all_shapes_data),
+        'files': []
+    }
     
-    for shape_data in shapes_data:
-        shape_info = {
-            'shape_index': shape_data['shape_index'],
-            'identifier': shape_data.get('identifier', 'unknown'),
-            'num_paths': len(shape_data['paths']),
-            'paths': []
+    for file_data in all_shapes_data:
+        file_info = {
+            'file_path': file_data['file_path'],
+            'file_name': file_data['file_name'],
+            'num_shapes': len(file_data['shapes']),
+            'shapes': []
         }
         
-        for path_idx, path_data in enumerate(shape_data['paths']):
-            path_info = {
-                'path_index': path_idx,
-                'num_points': len(path_data['points']),
-                'points': path_data['points'].tolist() if hasattr(path_data['points'], 'tolist') else path_data['points'],
-                'area': path_data['area'],
-                'winding': path_data['winding'],
-                'center': path_data['center'],
-                'bounds': path_data['bounds'],
-                'is_closed': path_data['is_closed']
+        for shape_data in file_data['shapes']:
+            shape_info = {
+                'shape_index': shape_data['shape_index'],
+                'identifier': shape_data.get('identifier', 'unknown'),
+                'file_source': file_data['file_name'],
+                'num_paths': len(shape_data['paths']),
+                'has_holes': len(shape_data['paths']) > 1,
+                'total_area': sum(path['area'] for path in shape_data['paths']),
+                'paths': []
             }
-            shape_info['paths'].append(path_info)
+            
+            for path_idx, path_data in enumerate(shape_data['paths']):
+                path_info = {
+                    'path_index': path_idx,
+                    'num_points': len(path_data['points']),
+                    'points': path_data['points'].tolist() if hasattr(path_data['points'], 'tolist') else path_data['points'],
+                    'area': path_data['area'],
+                    'winding': path_data['winding'],
+                    'center': path_data['center'],
+                    'bounds': path_data['bounds'],
+                    'is_closed': path_data['is_closed'],
+                    'is_likely_hole': path_data.get('is_likely_hole', False)
+                }
+                shape_info['paths'].append(path_info)
+            
+            file_info['shapes'].append(shape_info)
         
-        serializable_data.append(shape_info)
+        combined_data['files'].append(file_info)
     
     with open(output_file, 'w') as f:
-        json.dump(serializable_data, f, indent=2)
+        json.dump(combined_data, f, indent=2)
     
-    print(f"✅ Path data saved successfully")
+    print(f"✅ Combined shape data saved successfully")
+    print(f"📊 Summary: {combined_data['total_shapes']} shapes from {combined_data['total_files_analyzed']} files")
+    
+    # Print summary of shapes with holes
+    shapes_with_holes = []
+    for file_data in combined_data['files']:
+        for shape in file_data['shapes']:
+            if shape['has_holes']:
+                shapes_with_holes.append({
+                    'file': shape['file_source'],
+                    'shape_id': shape['identifier'],
+                    'num_paths': shape['num_paths'],
+                    'total_area': shape['total_area']
+                })
+    
+    if shapes_with_holes:
+        print(f"\n🕳️  Found {len(shapes_with_holes)} shapes with holes:")
+        for shape in shapes_with_holes:
+            print(f"   - File: {shape['file']}, ID: {shape['shape_id']}, Paths: {shape['num_paths']}, Area: {shape['total_area']:.2f}")
+    else:
+        print(f"\n⚪ No shapes with holes found at height {height}mm")
 
-def analyze_clf_at_height(clf_file_path, height=8.2):
-    """Main analysis function for a specific CLF file at given height"""
-    print(f"\n🎯 ANALYZING CLF FILE AT HEIGHT {height}mm")
-    print(f"📁 File: {os.path.basename(clf_file_path)}")
-    print(f"{'='*100}")
+def classify_paths_as_holes(shape_data):
+    """Classify paths as exterior boundaries or holes based on area and winding"""
+    if len(shape_data['paths']) <= 1:
+        return shape_data
+    
+    paths = shape_data['paths']
+    
+    # Sort paths by area (largest first)
+    sorted_paths = sorted(enumerate(paths), key=lambda x: x[1]['area'], reverse=True)
+    
+    # The largest path is likely the exterior
+    largest_idx, largest_path = sorted_paths[0]
+    largest_path['is_likely_hole'] = False
+    largest_path['classification'] = 'exterior'
+    
+    # Smaller paths are likely holes
+    for i, (original_idx, path) in enumerate(sorted_paths[1:], 1):
+        path['is_likely_hole'] = True
+        path['classification'] = 'hole'
+        
+        # Additional check: if winding is opposite to largest, it's definitely a hole
+        if path['winding'] != largest_path['winding']:
+            path['confidence'] = 'high'
+        else:
+            path['confidence'] = 'medium'
+    
+    return shape_data
+
+def analyze_clf_file_at_height(clf_file_path, height):
+    """Analyze a single CLF file at given height"""
+    file_name = os.path.basename(clf_file_path)
+    print(f"\n🔍 Analyzing {file_name} at height {height}mm...")
     
     try:
         part = CLFFile(clf_file_path)
         layer = part.find(height)
         
         if layer is None:
-            print(f"❌ No layer found at height {height}mm")
-            return
+            print(f"❌ No layer found at height {height}mm in {file_name}")
+            return None
             
         if not hasattr(layer, 'shapes'):
-            print("❌ Layer has no shapes")
-            return
+            print(f"❌ Layer has no shapes in {file_name}")
+            return None
             
         total_shapes = len(layer.shapes)
-        print(f"📊 Found {total_shapes} shapes in layer")
+        print(f"📊 Found {total_shapes} shapes in {file_name}")
         
-        shapes_data = []
+        file_shapes_data = []
         
         for i, shape in enumerate(layer.shapes):
             if hasattr(shape, 'points'):
@@ -299,14 +365,15 @@ def analyze_clf_at_height(clf_file_path, height=8.2):
                 if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
                     identifier = shape.model.id
                 
-                print(f"\n🔸 Found shape with {num_paths} path(s) (ID: {identifier})")
+                print(f"   🔸 Shape {i+1}: {num_paths} path(s) (ID: {identifier})")
                 
-                # Extract all attributes
-                extract_all_shape_attributes(shape, i)
+                # Extract detailed attributes (optional - comment out for less verbose output)
+                # extract_all_shape_attributes(shape, i, file_name)
                 
                 # Analyze path relationships if multiple paths
                 if num_paths > 1:
-                    analyze_path_relationships(shape, i)
+                    print(f"   🕳️  Shape has multiple paths - analyzing for holes...")
+                    analyze_path_relationships(shape, i, file_name)
                 
                 # Store data for JSON export
                 shape_data = {
@@ -331,46 +398,109 @@ def analyze_clf_at_height(clf_file_path, height=8.2):
                     }
                     shape_data['paths'].append(path_data)
                 
-                shapes_data.append(shape_data)
+                # Classify paths as holes or exteriors
+                shape_data = classify_paths_as_holes(shape_data)
+                
+                file_shapes_data.append(shape_data)
         
-        # Save data to JSON
-        output_file = f"shape_analysis_data_{height}mm.json"
-        save_path_data_to_json(shapes_data, output_file)
-        
-        print(f"\n✅ Analysis complete! Found {len(shapes_data)} shapes with path data")
+        return {
+            'file_path': clf_file_path,
+            'file_name': file_name,
+            'shapes': file_shapes_data
+        }
         
     except Exception as e:
-        print(f"❌ Error analyzing {clf_file_path}: {e}")
+        print(f"❌ Error analyzing {file_name}: {e}")
         import traceback
         traceback.print_exc()
+        return None
+
+def analyze_all_clf_files_at_height(build_path, height=8.2):
+    """Main function to analyze all CLF files at a given height"""
+    print(f"\n🎯 ANALYZING ALL CLF FILES AT HEIGHT {height}mm")
+    print(f"📁 Build Path: {build_path}")
+    print(f"{'='*100}")
+    
+    if not os.path.exists(build_path):
+        print(f"❌ Build path not found: {build_path}")
+        return
+    
+    # Find all CLF files
+    print(f"🔍 Searching for CLF files...")
+    clf_files = find_clf_files(build_path)
+    print(f"📊 Found {len(clf_files)} CLF files")
+    
+    all_shapes_data = []
+    files_with_shapes = 0
+    total_shapes_found = 0
+    
+    for i, clf_info in enumerate(clf_files):
+        print(f"\n{'='*60}")
+        print(f"📄 Processing file {i+1}/{len(clf_files)}")
+        
+        file_data = analyze_clf_file_at_height(clf_info['path'], height)
+        
+        if file_data and file_data['shapes']:
+            all_shapes_data.append(file_data)
+            files_with_shapes += 1
+            total_shapes_found += len(file_data['shapes'])
+            
+            # Quick summary for this file
+            shapes_with_holes = [s for s in file_data['shapes'] if len(s['paths']) > 1]
+            if shapes_with_holes:
+                print(f"   🕳️  Found {len(shapes_with_holes)} shapes with holes in this file")
+    
+    print(f"\n{'='*100}")
+    print(f"🎉 ANALYSIS COMPLETE!")
+    print(f"📊 Summary:")
+    print(f"   - Total CLF files: {len(clf_files)}")
+    print(f"   - Files with shapes at {height}mm: {files_with_shapes}")
+    print(f"   - Total shapes found: {total_shapes_found}")
+    
+    if all_shapes_data:
+        # Save combined data to JSON
+        output_file = f"all_shapes_analysis_{height}mm.json"
+        save_combined_data_to_json(all_shapes_data, output_file, height)
+        
+        # Additional analysis: count holes across all files
+        total_holes = 0
+        files_with_holes = 0
+        
+        for file_data in all_shapes_data:
+            file_has_holes = False
+            for shape in file_data['shapes']:
+                holes_in_shape = len([p for p in shape['paths'] if p.get('is_likely_hole', False)])
+                total_holes += holes_in_shape
+                if holes_in_shape > 0:
+                    file_has_holes = True
+            if file_has_holes:
+                files_with_holes += 1
+        
+        print(f"\n🕳️  HOLE ANALYSIS:")
+        print(f"   - Files containing holes: {files_with_holes}")
+        print(f"   - Total holes found: {total_holes}")
+        
+        return all_shapes_data
+    else:
+        print(f"❌ No shapes found at height {height}mm in any file")
+        return None
 
 if __name__ == "__main__":
-    # Focus specifically on the file: 5518-F-101_10_AN5518-F-101_Skin
-    # Located in preprocess build-424292 folder
-    target_file_path = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_contents/preprocess build-424292/Models/5518-F-101_10_AN5518-F-101_Skin/Part.clf"
+    # Analyze all files in the preprocess build-424292 folder
+    build_path = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_contents/preprocess build-424292"
     
-    if os.path.exists(target_file_path):
-        print(f"✅ Found target file: {target_file_path}")
-        analyze_clf_at_height(target_file_path, height=8.2)
+    # Set the height to analyze
+    analysis_height = 136.55  # Change this to analyze different heights
+    
+    print(f"🚀 Starting comprehensive analysis at height {analysis_height}mm")
+    
+    all_data = analyze_all_clf_files_at_height(build_path, height=analysis_height)
+    
+    if all_data:
+        print(f"\n✅ Analysis complete! Check the generated JSON file for detailed results.")
+        print(f"💡 Next steps:")
+        print(f"   1. Review 'all_shapes_analysis_{analysis_height}mm.json' for detailed data")
+        print(f"   2. Run visualization scripts to see the shapes and holes")
+        print(f"   3. Check web app for interactive exploration")
     else:
-        print(f"❌ Target file not found: {target_file_path}")
-        
-        # Fallback: search in preprocess build-424292
-        build_path = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_contents/preprocess build-424292"
-        if os.path.exists(build_path):
-            print(f"\n🔍 Searching in: {build_path}")
-            clf_files = find_clf_files(build_path)
-            
-            target_folder = "5518-F-101_10_AN5518-F-101_Skin"
-            for clf_info in clf_files:
-                if target_folder in clf_info['folder']:
-                    print(f"✅ Found: {clf_info['path']}")
-                    analyze_clf_at_height(clf_info['path'], height=8.2)
-                    break
-            else:
-                print(f"❌ Could not find folder containing: {target_folder}")
-                print("\n📋 Available folders:")
-                for clf_info in clf_files[:10]:  # Show first 10
-                    print(f"   - {clf_info['folder']}")
-        else:
-            print(f"❌ Build path not found: {build_path}")
+        print(f"\n❌ No data found. Try a different height or check the build path.")

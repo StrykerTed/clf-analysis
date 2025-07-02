@@ -349,7 +349,7 @@ def main():
     """Main visualization function"""
     
     # Load the shape data
-    json_file = "shape_analysis_data_134.0mm.json"
+    json_file = "shape_analysis_data_8.2mm.json"
     shapes_data = load_shape_data(json_file)
     
     if shapes_data is None:
@@ -367,7 +367,7 @@ def main():
     individual_figs = create_individual_shape_plots(shapes_data)
     
     # Save all visualizations
-    save_visualizations(fig, individual_figs)
+    save_visualizations(fig, individual_figs, height=8.2)
     
     # Show the plots
     print("🖼️  Displaying visualizations...")
