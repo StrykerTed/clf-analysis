@@ -88,6 +88,27 @@ def process_height(args):
         return {"height": height, "error": str(e), "success": False}
 
 
+# Define helper function for holes processing
+def process_holes_height(args):
+    height, clf_files, output_dir = args
+    try:
+        print(f"Processing holes view at height {height}mm...")
+        holes_view_file, holes_stats = create_combined_holes_platform_view(clf_files, output_dir, height=height)
+        if holes_view_file:
+            result = {
+                "height": height,
+                "filename": holes_view_file,
+                "holes_statistics": holes_stats,
+                "success": True
+            }
+            print(f"Created holes view at {height}mm: {holes_stats['total_holes']} holes found")
+            return result
+        return {"height": height, "success": False}
+    except Exception as e:
+        print(f"Error creating holes view at height {height}mm: {str(e)}")
+        return {"height": height, "error": str(e), "success": False}
+
+
 def main():
     # Clear the terminal screen based on OS
     import platform
@@ -353,15 +374,63 @@ def main():
             }
             print(f"Created combined identifier view with {platform_info['combined_identifier_view']['total_identifiers']} identifiers")
 
-        # Create combined holes platform view
+        # Create combined holes platform view at specific height
         print("\nGenerating combined holes platform view...")
-        holes_view_file, holes_stats = create_combined_holes_platform_view(clf_files, output_dir, height=134.0)
+        holes_view_file, holes_stats = create_combined_holes_platform_view(clf_files, output_dir, height=134.00)
         if holes_view_file:
             platform_info["combined_holes_view"] = {
                 "filename": holes_view_file,
                 "holes_statistics": holes_stats
             }
             print(f"Created combined holes view with {holes_stats['total_holes']} holes found in {holes_stats['files_with_holes']} files")
+
+        # Create holes views at regular intervals
+        print("\nGenerating holes views at regular intervals...")
+        holes_interval = input("Create Holes View for every x mm (default 10): ").strip()
+        if not holes_interval:
+            holes_interval = 10
+        else:
+            try:
+                holes_interval = float(holes_interval)
+            except ValueError:
+                print("Invalid input, using default 10mm")
+                holes_interval = 10
+        
+        # Get max height for the range
+        max_height = get_max_layer_height(clf_files)
+        holes_heights = list(np.arange(0, max_height + holes_interval, holes_interval))
+        print(f"Creating holes views from 0mm to {max_height}mm every {holes_interval}mm ({len(holes_heights)} views)")
+        
+        # Process holes views sequentially to avoid multiprocessing issues
+        successful_holes_views = []
+        total_holes_found = 0
+        
+        for height in holes_heights:
+            try:
+                print(f"Processing holes view at height {height}mm...")
+                holes_view_file, holes_stats = create_combined_holes_platform_view(clf_files, output_dir, height=height)
+                if holes_view_file:
+                    successful_holes_views.append({
+                        "height": height,
+                        "filename": holes_view_file,
+                        "holes_statistics": holes_stats
+                    })
+                    total_holes_found += holes_stats["total_holes"]
+                    print(f"Created holes view at {height}mm: {holes_stats['total_holes']} holes found")
+                else:
+                    print(f"No holes view created for {height}mm")
+            except Exception as e:
+                print(f"Error creating holes view at height {height}mm: {str(e)}")
+        
+        if successful_holes_views:
+            platform_info["holes_views_interval"] = {
+                "interval_mm": holes_interval,
+                "total_views": len(successful_holes_views),
+                "height_range": [0, max_height],
+                "total_holes_across_all_views": total_holes_found,
+                "views": successful_holes_views
+            }
+            print(f"Created {len(successful_holes_views)} holes views with total of {total_holes_found} holes across all heights")
 
         # Create combined view of excluded identifiers if requested
         if draw_excluded and excluded_shapes_by_identifier:

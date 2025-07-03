@@ -500,7 +500,7 @@ def process_layer_data(clf_info, height, colors):
         if hasattr(layer, 'shapes'):
             shapes = list(layer.shapes)
             
-            # First pass: process all shapes as potential exteriors
+            # First pass: process all shapes and collect them for hole detection
             processed_shapes = []
             for i, shape in enumerate(shapes):
                 color = colors.get(clf_info['name'], 'gray')
@@ -509,47 +509,8 @@ def process_layer_data(clf_info, height, colors):
                     shape_identifier = shape.model.id
                     
                 if hasattr(shape, 'points') and shape.points:
-                    # Check if shape has multiple paths (potential holes)
-                    if len(shape.points) > 1:
-                        # Process each path separately - first path is exterior, others are holes
-                        for path_idx, points in enumerate(shape.points):
-                            if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
-                                should_close = False
-                                try:
-                                    should_close = should_close_path(points)
-                                    if hasattr(should_close, 'item'):
-                                        should_close = should_close.item()
-                                except Exception as e:
-                                    print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
-                                    should_close = False
-                                
-                                # Determine if this path is a hole based on path index
-                                is_hole = path_idx > 0  # First path (index 0) is exterior, others are holes
-                                shape_type = 'interior' if is_hole else 'exterior'
-                                
-                                # Create shape data for this path
-                                shape_data = {
-                                    'type': 'path',
-                                    'shape_type': shape_type,
-                                    'points': points.tolist(),
-                                    'color': color,
-                                    'clf_name': clf_info['name'],
-                                    'clf_folder': clf_info['folder'],
-                                    'fill_closed': True,  # Will be updated by main function
-                                    'should_close': should_close,
-                                    'identifier': shape_identifier,
-                                    'parent_shape_id': shape_identifier if is_hole else None,
-                                    'parent_shape_index': i if is_hole else None,
-                                    'is_hole': is_hole,
-                                    'path_index': path_idx
-                                }
-                                shape_data_list.append(shape_data)
-                                
-                                if is_hole:
-                                    print(f"  Found hole: Path {path_idx} in Shape {i} (ID:{shape_identifier}) in {clf_info['name']}")
-                    else:
-                        # Single path shape (no holes)
-                        points = shape.points[0]  # Only process the first path (exterior boundary)
+                    # Process each path in the shape
+                    for path_idx, points in enumerate(shape.points):
                         if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
                             should_close = False
                             try:
@@ -560,12 +521,18 @@ def process_layer_data(clf_info, height, colors):
                                 print(f"Error in should_close_path for {clf_info['name']}: {str(e)}")
                                 should_close = False
                             
+                            # Create unique identifier for this path
+                            path_id = f"{shape_identifier}_path_{path_idx}" if shape_identifier else f"shape_{i}_path_{path_idx}"
+                            
+                            # Add to processed_shapes for hole detection (keep as numpy array)
                             processed_shapes.append({
-                                'index': i,
+                                'index': len(processed_shapes),
                                 'points': points,
-                                'identifier': shape_identifier,
+                                'identifier': path_id,
                                 'color': color,
-                                'should_close': should_close
+                                'should_close': should_close,
+                                'original_shape_index': i,
+                                'path_index': path_idx
                             })
                         
                 elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
@@ -585,8 +552,9 @@ def process_layer_data(clf_info, height, colors):
                     }
                     shape_data_list.append(shape_data)
             
-            # Second pass: detect holes using geometric containment
+            # Second pass: detect holes using geometric containment between all shapes
             hole_relationships = []
+            
             for i, shape1 in enumerate(processed_shapes):
                 for j, shape2 in enumerate(processed_shapes):
                     if i == j:
@@ -602,7 +570,7 @@ def process_layer_data(clf_info, height, colors):
                         })
                         print(f"  Found hole: Shape {j} (ID:{shape2['identifier']}) inside Shape {i} (ID:{shape1['identifier']})")
             
-            # Third pass: create shape data with hole information for shapes processed via geometric containment
+            # Third pass: create shape data with hole information
             hole_indices = set(rel['hole_index'] for rel in hole_relationships)
             
             for i, shape_info in enumerate(processed_shapes):
@@ -616,6 +584,7 @@ def process_layer_data(clf_info, height, colors):
                             parent_info = rel
                             break
                 
+                # Create shape data for this shape
                 shape_data = {
                     'type': 'path',
                     'shape_type': 'interior' if is_hole else 'exterior',
@@ -623,15 +592,16 @@ def process_layer_data(clf_info, height, colors):
                     'color': shape_info['color'],
                     'clf_name': clf_info['name'],
                     'clf_folder': clf_info['folder'],
-                    'fill_closed': True,  # Set default, will be updated by main function
+                    'fill_closed': True,  # Will be updated by main function
                     'should_close': shape_info['should_close'],
                     'identifier': shape_info['identifier'],
                     'parent_shape_id': parent_info['parent_id'] if parent_info else None,
                     'parent_shape_index': parent_info['parent_index'] if parent_info else None,
-                    'is_hole': is_hole
+                    'is_hole': is_hole,
+                    'path_index': shape_info['path_index']
                 }
                 shape_data_list.append(shape_data)
-                
+            
             print(f"  Processed {len(processed_shapes)} shapes, found {len(hole_relationships)} holes in {clf_info['name']}")
                         
     except Exception as e:
@@ -647,8 +617,8 @@ def is_shape_inside_shape(inner_points, outer_points):
     Check if inner_points shape is geometrically contained within outer_points shape
     
     Args:
-        inner_points: numpy array of points for the inner shape
-        outer_points: numpy array of points for the outer shape
+        inner_points: numpy array or list of points for the inner shape
+        outer_points: numpy array or list of points for the outer shape
         
     Returns:
         bool: True if inner shape is inside outer shape
@@ -657,13 +627,31 @@ def is_shape_inside_shape(inner_points, outer_points):
         import numpy as np
         from matplotlib.path import Path
         
+        # Convert to numpy arrays if they're lists
+        if isinstance(inner_points, list):
+            inner_points = np.array(inner_points)
+        if isinstance(outer_points, list):
+            outer_points = np.array(outer_points)
+        
+        # Ensure we have valid 2D arrays
+        if inner_points.ndim != 2 or outer_points.ndim != 2:
+            return False
+        if inner_points.shape[1] != 2 or outer_points.shape[1] != 2:
+            return False
+        if len(inner_points) == 0 or len(outer_points) == 0:
+            return False
+        
         # Create a path from the outer shape
         outer_path = Path(outer_points)
         
         # Check if all points of the inner shape are inside the outer path
         # We'll check a few sample points to be efficient
-        sample_indices = np.linspace(0, len(inner_points)-1, min(10, len(inner_points)), dtype=int)
-        sample_points = inner_points[sample_indices]
+        num_samples = min(10, len(inner_points))
+        if num_samples <= 1:
+            sample_points = inner_points
+        else:
+            sample_indices = np.linspace(0, len(inner_points)-1, num_samples, dtype=int)
+            sample_points = inner_points[sample_indices]
         
         # All sample points should be inside the outer shape
         inside_checks = outer_path.contains_points(sample_points)
