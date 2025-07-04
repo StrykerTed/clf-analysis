@@ -486,7 +486,7 @@ def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=Fal
 def process_layer_data(clf_info, height, colors):
     """Helper function to process a single layer and extract shape data.
     Used by create_clean_platform for parallel processing.
-    Now includes hole detection using multiple paths within the same shape."""
+    Now includes hole detection using Shape[1] Path[0] logic exactly as in baseline_visualization_test_v2.py."""
     shape_data_list = []
     
     try:
@@ -502,10 +502,11 @@ def process_layer_data(clf_info, height, colors):
             shapes = list(layer.shapes)
             print(f"    Found {len(shapes)} shapes in layer at {height}mm for {clf_info['name']}")
             
-            # Check if this file can contain holes (must contain 'skin' in filename, case-insensitive)
-            can_have_holes = 'skin' in clf_info['name'].lower()
+            # Check if this folder can contain holes (must contain "Skin" in folder name)
+            folder_name = clf_info['folder']
+            can_have_holes = 'Skin' in folder_name
             
-            # Process each shape
+            # Process each shape in the layer using the exact logic from baseline_visualization_test_v2.py
             for i, shape in enumerate(shapes):
                 color = colors.get(clf_info['name'], 'gray')
                 shape_identifier = None
@@ -513,12 +514,9 @@ def process_layer_data(clf_info, height, colors):
                     shape_identifier = shape.model.id
                     
                 if hasattr(shape, 'points') and shape.points:
-                    # Check if this shape has multiple paths (potential holes)
-                    num_paths = len(shape.points)
-                    
                     # Process each path in the shape
                     for path_idx, points in enumerate(shape.points):
-                        if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
+                        if isinstance(points, np.ndarray) and points.shape[0] >= 3 and points.shape[1] >= 2:
                             should_close = False
                             try:
                                 should_close = should_close_path(points)
@@ -531,13 +529,13 @@ def process_layer_data(clf_info, height, colors):
                             # Create unique identifier for this path
                             path_id = f"{shape_identifier}_path_{path_idx}" if shape_identifier else f"shape_{i}_path_{path_idx}"
                             
-                            # Determine if this path is a hole
-                            # First path (index 0) is always exterior
-                            # Additional paths (index > 0) are holes if file can have holes
-                            is_hole = path_idx > 0 and can_have_holes and num_paths > 1
+                            # Determine if this path is a hole using exact logic from baseline_visualization_test_v2.py:
+                            # Holes are Shape[1] Path[0] (second shape, first path) in files with at least 2 shapes
+                            # AND the folder must contain "Skin"
+                            is_hole = (i == 1 and path_idx == 0 and len(shapes) >= 2 and can_have_holes)
                             
                             if is_hole:
-                                print(f"  Found hole: Path {path_idx} in Shape {i} (ID:{shape_identifier}) in {clf_info['name']}")
+                                print(f"  Found hole: Shape[1] Path[0] with {len(points)} points in {folder_name}")
                             
                             # Create shape data for this path
                             shape_data = {
@@ -551,16 +549,16 @@ def process_layer_data(clf_info, height, colors):
                                 'should_close': should_close,
                                 'identifier': path_id,
                                 'parent_shape_id': f"{shape_identifier}_path_0" if is_hole else None,
-                                'parent_shape_index': i if is_hole else None,
+                                'parent_shape_index': 0 if is_hole else None,  # Parent is Shape[0]
                                 'is_hole': is_hole,
                                 'path_index': path_idx,
                                 'shape_index': i,
-                                'total_paths_in_shape': num_paths
+                                'total_paths_in_shape': len(shape.points)
                             }
                             shape_data_list.append(shape_data)
                         
                 elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
-                    # Handle circles (circles cannot have holes)
+                    # Handle circles (circles cannot be holes in this logic)
                     shape_data = {
                         'type': 'circle',
                         'shape_type': 'exterior',  # Circles are always exterior
@@ -578,7 +576,7 @@ def process_layer_data(clf_info, height, colors):
                     }
                     shape_data_list.append(shape_data)
             
-            # Count holes found
+            # Count holes found using the exact same logic
             holes_found = sum(1 for shape in shape_data_list if shape.get('is_hole', False))
             print(f"  Processed {len(shapes)} shapes, found {holes_found} holes in {clf_info['name']}")
                         
