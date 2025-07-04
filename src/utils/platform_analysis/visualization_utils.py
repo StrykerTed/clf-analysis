@@ -288,7 +288,7 @@ def create_identifier_platform_view(identifier, shapes_data, output_dir):
         return None
 
 
-def create_platform_composite_with_folders(clf_files, output_dir, height=1.0, fill_closed=False):
+def create_platform_composite_with_folders(clf_files, output_dir, height=1.0, fill_closed=False, create_transparent_png=False):
     """Create a composite view with unique colors per folder and a legend"""    
     # Create figure
     setup_platform_figure()
@@ -364,8 +364,9 @@ def create_platform_composite_with_folders(clf_files, output_dir, height=1.0, fi
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     save_platform_figure(plt, output_path)
     
-    # Create transparent version
-    create_transparent_composite_folders(all_shapes, output_dir, height, fill_closed)
+    # Create transparent version only if enabled
+    if create_transparent_png:
+        create_transparent_composite_folders(all_shapes, output_dir, height, fill_closed)
     
     return os.path.join("composite_platforms", filename)
 
@@ -485,7 +486,7 @@ def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=Fal
 def process_layer_data(clf_info, height, colors):
     """Helper function to process a single layer and extract shape data.
     Used by create_clean_platform for parallel processing.
-    Now includes hole detection using geometric containment."""
+    Now includes hole detection using multiple paths within the same shape."""
     shape_data_list = []
     
     try:
@@ -499,9 +500,12 @@ def process_layer_data(clf_info, height, colors):
             
         if hasattr(layer, 'shapes'):
             shapes = list(layer.shapes)
+            print(f"    Found {len(shapes)} shapes in layer at {height}mm for {clf_info['name']}")
             
-            # First pass: process all shapes and collect them for hole detection
-            processed_shapes = []
+            # Check if this file can contain holes (must contain 'skin' in filename, case-insensitive)
+            can_have_holes = 'skin' in clf_info['name'].lower()
+            
+            # Process each shape
             for i, shape in enumerate(shapes):
                 color = colors.get(clf_info['name'], 'gray')
                 shape_identifier = None
@@ -509,6 +513,9 @@ def process_layer_data(clf_info, height, colors):
                     shape_identifier = shape.model.id
                     
                 if hasattr(shape, 'points') and shape.points:
+                    # Check if this shape has multiple paths (potential holes)
+                    num_paths = len(shape.points)
+                    
                     # Process each path in the shape
                     for path_idx, points in enumerate(shape.points):
                         if isinstance(points, np.ndarray) and points.shape[0] >= 1 and points.shape[1] >= 2:
@@ -524,19 +531,36 @@ def process_layer_data(clf_info, height, colors):
                             # Create unique identifier for this path
                             path_id = f"{shape_identifier}_path_{path_idx}" if shape_identifier else f"shape_{i}_path_{path_idx}"
                             
-                            # Add to processed_shapes for hole detection (keep as numpy array)
-                            processed_shapes.append({
-                                'index': len(processed_shapes),
-                                'points': points,
-                                'identifier': path_id,
+                            # Determine if this path is a hole
+                            # First path (index 0) is always exterior
+                            # Additional paths (index > 0) are holes if file can have holes
+                            is_hole = path_idx > 0 and can_have_holes and num_paths > 1
+                            
+                            if is_hole:
+                                print(f"  Found hole: Path {path_idx} in Shape {i} (ID:{shape_identifier}) in {clf_info['name']}")
+                            
+                            # Create shape data for this path
+                            shape_data = {
+                                'type': 'path',
+                                'shape_type': 'interior' if is_hole else 'exterior',
+                                'points': points.tolist(),
                                 'color': color,
+                                'clf_name': clf_info['name'],
+                                'clf_folder': clf_info['folder'],
+                                'fill_closed': True,  # Will be updated by main function
                                 'should_close': should_close,
-                                'original_shape_index': i,
-                                'path_index': path_idx
-                            })
+                                'identifier': path_id,
+                                'parent_shape_id': f"{shape_identifier}_path_0" if is_hole else None,
+                                'parent_shape_index': i if is_hole else None,
+                                'is_hole': is_hole,
+                                'path_index': path_idx,
+                                'shape_index': i,
+                                'total_paths_in_shape': num_paths
+                            }
+                            shape_data_list.append(shape_data)
                         
                 elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
-                    # Handle circles (add them directly as they don't have holes in this context)
+                    # Handle circles (circles cannot have holes)
                     shape_data = {
                         'type': 'circle',
                         'shape_type': 'exterior',  # Circles are always exterior
@@ -548,61 +572,15 @@ def process_layer_data(clf_info, height, colors):
                         'fill_closed': True,
                         'identifier': shape_identifier,
                         'parent_shape_id': None,
-                        'is_hole': False
+                        'is_hole': False,
+                        'shape_index': i,
+                        'total_paths_in_shape': 1
                     }
                     shape_data_list.append(shape_data)
             
-            # Second pass: detect holes using geometric containment between all shapes
-            hole_relationships = []
-            
-            for i, shape1 in enumerate(processed_shapes):
-                for j, shape2 in enumerate(processed_shapes):
-                    if i == j:
-                        continue
-                    
-                    # Check if shape2 is inside shape1 (shape2 is a hole in shape1)
-                    if is_shape_inside_shape(shape2['points'], shape1['points']):
-                        hole_relationships.append({
-                            'hole_index': j,
-                            'parent_index': i,
-                            'hole_id': shape2['identifier'],
-                            'parent_id': shape1['identifier']
-                        })
-                        print(f"  Found hole: Shape {j} (ID:{shape2['identifier']}) inside Shape {i} (ID:{shape1['identifier']})")
-            
-            # Third pass: create shape data with hole information
-            hole_indices = set(rel['hole_index'] for rel in hole_relationships)
-            
-            for i, shape_info in enumerate(processed_shapes):
-                is_hole = i in hole_indices
-                parent_info = None
-                
-                if is_hole:
-                    # Find parent information
-                    for rel in hole_relationships:
-                        if rel['hole_index'] == i:
-                            parent_info = rel
-                            break
-                
-                # Create shape data for this shape
-                shape_data = {
-                    'type': 'path',
-                    'shape_type': 'interior' if is_hole else 'exterior',
-                    'points': shape_info['points'].tolist(),
-                    'color': shape_info['color'],
-                    'clf_name': clf_info['name'],
-                    'clf_folder': clf_info['folder'],
-                    'fill_closed': True,  # Will be updated by main function
-                    'should_close': shape_info['should_close'],
-                    'identifier': shape_info['identifier'],
-                    'parent_shape_id': parent_info['parent_id'] if parent_info else None,
-                    'parent_shape_index': parent_info['parent_index'] if parent_info else None,
-                    'is_hole': is_hole,
-                    'path_index': shape_info['path_index']
-                }
-                shape_data_list.append(shape_data)
-            
-            print(f"  Processed {len(processed_shapes)} shapes, found {len(hole_relationships)} holes in {clf_info['name']}")
+            # Count holes found
+            holes_found = sum(1 for shape in shape_data_list if shape.get('is_hole', False))
+            print(f"  Processed {len(shapes)} shapes, found {holes_found} holes in {clf_info['name']}")
                         
     except Exception as e:
         print(f"Error processing {clf_info['name']} at height {height}mm: {str(e)}")
@@ -919,9 +897,165 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
     return png_path
 
 
+def create_clean_platform_skin_only(clf_files, output_dir, height=1.0, fill_closed=False, alignment_style_only=False, save_clean_png=True, only_skin_files=True):
+    """DEBUG VERSION: Create a clean platform view with option to filter for skin files only.
+    This is a separate function for testing and debugging purposes."""
+    import os
+    import json
+    
+    # Define colors dictionary
+    colors = {
+        'Part.clf': 'blue',
+        'WaferSupport.clf': 'red',
+        'Net.clf': 'green'
+    }
+    
+    # Filter files if only_skin_files is True
+    if only_skin_files:
+        original_count = len(clf_files)
+        clf_files = [clf_info for clf_info in clf_files if 'skin' in clf_info['folder'].lower()]
+        print(f"Filtering for skin files only: {len(clf_files)} out of {original_count} files")
+        if len(clf_files) > 0:
+            print("Example skin files:")
+            for i, clf_info in enumerate(clf_files[:3]):
+                print(f"  {i+1}: {clf_info['name']} in folder {clf_info['folder']}")
+    
+    
+    # Process all CLF files sequentially (avoiding nested multiprocessing)
+    shape_data_list = []
+    for clf_info in clf_files:
+        try:
+            # Log which folder and file are being processed for skin_files_only
+            if only_skin_files:
+                print(f"Processing skin file: '{clf_info['name']}' from folder: '{clf_info['folder']}'")
+            
+            result = process_layer_data(clf_info, height, colors)
+            shape_data_list.extend(result)
+        except Exception as e:
+            print(f"Error processing {clf_info['name']} at height {height}mm: {str(e)}")
+    
+    # Update fill_closed for all shapes
+    for shape_data in shape_data_list:
+        shape_data['fill_closed'] = fill_closed
+    
+    # Only create plot if save_clean_png is True
+    if save_clean_png:
+        # If alignment_style_only, declare midpoints list
+        if alignment_style_only:
+            midpoints = []
+            
+        # Create figure with equal aspect ratio
+        fig = setup_platform_figure(figsize=(15, 15))
+        
+        # Remove all margins and spacing
+        ax = plt.gca()
+        ax.set_position([0, 0, 1, 1])
+        
+        # Set exact limits for platform size
+        plt.xlim(-125, 125)
+        plt.ylim(-125, 125)
+        
+        # Turn off all chart elements
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        plt.axis('off')
+        
+        # Draw all shapes with enhanced colorization for debugging
+        for shape_data in shape_data_list:
+            if shape_data['type'] == 'path' and 'points' in shape_data:
+                points = np.array(shape_data['points'])
+                
+                # Enhanced color coding for debugging holes and paths
+                if only_skin_files:
+                    # For skin files, use different colors based on path index and hole status
+                    if shape_data.get('is_hole', False):
+                        # Holes are bright red with thick lines
+                        color = 'red'
+                        linewidth = 3
+                        alpha = 0.9
+                        print(f"  Drawing HOLE: Path {shape_data.get('path_index', '?')} in Shape {shape_data.get('shape_index', '?')} from {shape_data['clf_name']}")
+                    else:
+                        # Exterior paths: color by path index for debugging
+                        path_idx = shape_data.get('path_index', 0)
+                        if path_idx == 0:
+                            color = 'blue'  # First path (exterior) is blue
+                        elif path_idx == 1:
+                            color = 'green'  # Second path is green
+                        elif path_idx == 2:
+                            color = 'orange'  # Third path is orange
+                        else:
+                            color = 'purple'  # Additional paths are purple
+                        linewidth = 2
+                        alpha = 0.7
+                        print(f"  Drawing EXTERIOR: Path {path_idx} in Shape {shape_data.get('shape_index', '?')} from {shape_data['clf_name']} (total paths: {shape_data.get('total_paths_in_shape', '?')})")
+                else:
+                    # For all files, use original color scheme
+                    color = shape_data['color']
+                    linewidth = 1
+                    alpha = 0.7
+                
+                if alignment_style_only:
+                    draw_aligned_shape(plt, points, color, midpoints=midpoints)
+                else:
+                    if fill_closed and shape_data.get('should_close', False):
+                        polygon = Polygon(points, facecolor='black', edgecolor=color, alpha=alpha, linewidth=linewidth)
+                        plt.gca().add_patch(polygon)
+                    else:
+                        # Draw unfilled shapes with custom colors
+                        plt.plot(points[:, 0], points[:, 1], color=color, linewidth=linewidth, alpha=alpha)
+                        if shape_data.get('should_close', False):
+                            # Close the path if needed
+                            plt.plot([points[-1, 0], points[0, 0]], [points[-1, 1], points[0, 1]], color=color, linewidth=linewidth, alpha=alpha)
+                        
+            elif shape_data['type'] == 'circle':
+                color = shape_data['color'] if not only_skin_files else 'cyan'  # Circles in cyan for skin files
+                circle = plt.Circle(shape_data['center'], shape_data['radius'], 
+                                   color=color, fill=False, alpha=0.7)
+                plt.gca().add_artist(circle)
+                
+        plt.axis('equal')  # Ensure perfect square
+        filename = f'clean_platform_enhanced_{height}mm.png'
+        output_path = os.path.join(output_dir, "clean_platforms", filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        save_platform_figure(plt, output_path, pad_inches=0)
+        png_path = os.path.join("clean_platforms", filename)
+    else:
+        png_path = None
+    
+    # Save the shape data to a file
+    try:
+        # Extract build number from ABP filename
+        abp_name = os.path.basename(output_dir)
+        build_number = abp_name.split('-')[1].split('.')[0] if '-' in abp_name else ''
+        
+        # Create directory with build number
+        raw_data_dir = os.path.join(output_dir, f"imagePathRawData-{build_number}")
+        os.makedirs(raw_data_dir, exist_ok=True)
+
+        # Construct filename
+        data_filename = f'platform_layer_pathdata_enhanced_{height}mm.json'
+        data_output_path = os.path.join(raw_data_dir, data_filename)
+        
+        # Add debugging information
+        print(f"\nWriting enhanced shape data to: {data_output_path}")
+        print(f"Number of shapes being written: {len(shape_data_list)}")
+        
+        with open(data_output_path, 'w') as f:
+            json.dump(shape_data_list, f, indent=2)
+        
+        print(f"Successfully wrote enhanced shape data for height {height}mm")
+        
+    except Exception as e:
+        print(f"Error saving enhanced shape data for clean platform at height {height}mm: {str(e)}")
+        
+    return png_path
+
+
 def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
     """Create a platform view showing all detected holes across all CLF files at a specific height.
-    Similar to combined_identifier_platform_view but focuses on holes detection."""
+    Uses the corrected hole detection logic (multiple paths within same shape)."""
     try:
         print(f"Creating combined holes platform view at {height}mm...")
         
@@ -956,59 +1090,52 @@ def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
                 exteriors_in_file = 0
                 holes_in_file = 0
                 
-                # Process each shape pair to find holes using geometric containment
-                for i, shape1 in enumerate(shapes):
-                    if not hasattr(shape1, 'points') or not shape1.points:
+                # Check if this file can contain holes (must contain 'skin' in filename, case-insensitive)
+                can_have_holes = 'skin' in clf_info['name'].lower()
+                
+                # Process each shape to find holes using multiple paths within same shape
+                for i, shape in enumerate(shapes):
+                    if not hasattr(shape, 'points') or not shape.points:
                         continue
                         
-                    # Get identifier for shape1
-                    identifier1 = "unknown"
-                    if hasattr(shape1, 'model') and hasattr(shape1.model, 'id'):
-                        identifier1 = str(shape1.model.id)
+                    # Get identifier for shape
+                    identifier = "unknown"
+                    if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
+                        identifier = str(shape.model.id)
                     
-                    # Shape1 first path is always an exterior
-                    exterior_points = shape1.points[0]
-                    exterior_info = {
-                        'type': 'exterior',
-                        'points': exterior_points,
-                        'identifier': identifier1,
-                        'clf_file': clf_info['name'],
-                        'clf_folder': clf_info['folder'],
-                        'color': color,
-                        'shape_index': i
-                    }
-                    all_exteriors.append(exterior_info)
-                    exteriors_in_file += 1
+                    num_paths = len(shape.points)
                     
-                    # Look for other shapes that might be holes inside this shape
-                    for j, shape2 in enumerate(shapes):
-                        if i == j:  # Skip same shape
-                            continue
-                        
-                        if not hasattr(shape2, 'points') or not shape2.points:
-                            continue
-                        
-                        # Get identifier for shape2  
-                        identifier2 = "unknown"
-                        if hasattr(shape2, 'model') and hasattr(shape2.model, 'id'):
-                            identifier2 = str(shape2.model.id)
-                        
-                        # Check if shape2 is inside shape1 using geometric containment
-                        shape2_points = shape2.points[0]  # Use first path of shape2
-                        
-                        if is_shape_inside_shape(shape2_points, exterior_points):
-                            print(f"    Found hole: Shape {j} (ID:{identifier2}) inside Shape {i} (ID:{identifier1}) in {clf_info['name']}")
-                            
-                            hole_info = {
-                                'type': 'hole',
-                                'points': shape2_points,
-                                'identifier': identifier2,
+                    # Process each path in the shape
+                    for path_idx, points in enumerate(shape.points):
+                        if path_idx == 0:
+                            # First path is always exterior
+                            exterior_info = {
+                                'type': 'exterior',
+                                'points': points,
+                                'identifier': identifier,
                                 'clf_file': clf_info['name'],
                                 'clf_folder': clf_info['folder'],
                                 'color': color,
-                                'shape_index': j,
+                                'shape_index': i,
+                                'path_index': path_idx
+                            }
+                            all_exteriors.append(exterior_info)
+                            exteriors_in_file += 1
+                        elif can_have_holes and num_paths > 1:
+                            # Additional paths are holes if file can have holes
+                            print(f"    Found hole: Path {path_idx} in Shape {i} (ID:{identifier}) in {clf_info['name']}")
+                            
+                            hole_info = {
+                                'type': 'hole',
+                                'points': points,
+                                'identifier': f"{identifier}_path_{path_idx}",
+                                'clf_file': clf_info['name'],
+                                'clf_folder': clf_info['folder'],
+                                'color': color,
+                                'shape_index': i,
+                                'path_index': path_idx,
                                 'parent_shape_index': i,
-                                'parent_identifier': identifier1
+                                'parent_identifier': identifier
                             }
                             all_holes.append(hole_info)
                             holes_in_file += 1
@@ -1021,10 +1148,11 @@ def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
                     'filename': clf_info['name'],
                     'folder': clf_info['folder'],
                     'exteriors': exteriors_in_file,
-                    'holes': holes_in_file
+                    'holes': holes_in_file,
+                    'can_have_holes': can_have_holes
                 })
                 
-                print(f"  - {clf_info['name']}: {exteriors_in_file} exteriors, {holes_in_file} holes")
+                print(f"  - {clf_info['name']}: {exteriors_in_file} exteriors, {holes_in_file} holes (can_have_holes: {can_have_holes})")
                 
             except Exception as e:
                 print(f"Error processing {clf_info['name']} for holes: {e}")
@@ -1110,3 +1238,156 @@ def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
         import traceback
         traceback.print_exc()
         return None, None
+
+
+def create_clean_platform_skin_only_enhanced(clf_files, output_dir, height=1.0, fill_closed=False, alignment_style_only=False, save_clean_png=True, only_skin_files=True):
+    """DEBUG VERSION: Create a clean platform view with enhanced colorization for hole detection debugging.
+    This function adds color coding to distinguish different paths and holes."""
+    
+    # Define colors dictionary
+    colors = {
+        'Part.clf': 'blue',
+        'WaferSupport.clf': 'red',
+        'Net.clf': 'green'
+    }
+    
+    # Filter files if only_skin_files is True
+    if only_skin_files:
+        original_count = len(clf_files)
+        clf_files = [clf_info for clf_info in clf_files if 'skin' in clf_info['folder'].lower()]
+        print(f"Filtering for skin files only: {len(clf_files)} out of {original_count} files")
+        if len(clf_files) > 0:
+            print("Example skin files:")
+            for i, clf_info in enumerate(clf_files[:3]):
+                print(f"  {i+1}: {clf_info['name']} in folder {clf_info['folder']}")
+    
+    # Process all CLF files sequentially (avoiding nested multiprocessing)
+    shape_data_list = []
+    for clf_info in clf_files:
+        try:
+            # Log which folder and file are being processed for skin_files_only
+            if only_skin_files:
+                print(f"Processing skin file: '{clf_info['name']}' from folder: '{clf_info['folder']}'")
+            
+            result = process_layer_data(clf_info, height, colors)
+            shape_data_list.extend(result)
+        except Exception as e:
+            print(f"Error processing {clf_info['name']} at height {height}mm: {str(e)}")
+    
+    # Update fill_closed for all shapes
+    for shape_data in shape_data_list:
+        shape_data['fill_closed'] = fill_closed
+    
+    # Only create plot if save_clean_png is True
+    if save_clean_png:
+        # If alignment_style_only, declare midpoints list
+        if alignment_style_only:
+            midpoints = []
+            
+        # Create figure with equal aspect ratio
+        fig = setup_platform_figure(figsize=(15, 15))
+        
+        # Remove all margins and spacing
+        ax = plt.gca()
+        ax.set_position([0, 0, 1, 1])
+        
+        # Set exact limits for platform size
+        plt.xlim(-125, 125)
+        plt.ylim(-125, 125)
+        
+        # Turn off all chart elements
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        plt.axis('off')
+        
+        # Draw all shapes with enhanced colorization for debugging
+        for shape_data in shape_data_list:
+            if shape_data['type'] == 'path' and 'points' in shape_data:
+                points = np.array(shape_data['points'])
+                
+                # Enhanced color coding for debugging holes and paths
+                if only_skin_files:
+                    # For skin files, use different colors based on path index and hole status
+                    if shape_data.get('is_hole', False):
+                        # Holes are bright red with thick lines
+                        color = 'red'
+                        linewidth = 3
+                        alpha = 0.9
+                        print(f"  Drawing HOLE: Path {shape_data.get('path_index', '?')} in Shape {shape_data.get('shape_index', '?')} from {shape_data['clf_name']}")
+                    else:
+                        # Exterior paths: color by path index for debugging
+                        path_idx = shape_data.get('path_index', 0)
+                        if path_idx == 0:
+                            color = 'blue'  # First path (exterior) is blue
+                        elif path_idx == 1:
+                            color = 'green'  # Second path is green
+                        elif path_idx == 2:
+                            color = 'orange'  # Third path is orange
+                        else:
+                            color = 'purple'  # Additional paths are purple
+                        linewidth = 2
+                        alpha = 0.7
+                        print(f"  Drawing EXTERIOR: Path {path_idx} in Shape {shape_data.get('shape_index', '?')} from {shape_data['clf_name']} (total paths: {shape_data.get('total_paths_in_shape', '?')})")
+                else:
+                    # For all files, use original color scheme
+                    color = shape_data['color']
+                    linewidth = 1
+                    alpha = 0.7
+                
+                if alignment_style_only:
+                    draw_aligned_shape(plt, points, color, midpoints=midpoints)
+                else:
+                    if fill_closed and shape_data.get('should_close', False):
+                        polygon = Polygon(points, facecolor='black', edgecolor=color, alpha=alpha, linewidth=linewidth)
+                        plt.gca().add_patch(polygon)
+                    else:
+                        # Draw unfilled shapes with custom colors
+                        plt.plot(points[:, 0], points[:, 1], color=color, linewidth=linewidth, alpha=alpha)
+                        if shape_data.get('should_close', False):
+                            # Close the path if needed
+                            plt.plot([points[-1, 0], points[0, 0]], [points[-1, 1], points[0, 1]], color=color, linewidth=linewidth, alpha=alpha)
+                        
+            elif shape_data['type'] == 'circle':
+                color = shape_data['color'] if not only_skin_files else 'cyan'  # Circles in cyan for skin files
+                circle = plt.Circle(shape_data['center'], shape_data['radius'], 
+                                   color=color, fill=False, alpha=0.7)
+                plt.gca().add_artist(circle)
+                
+        plt.axis('equal')  # Ensure perfect square
+        filename = f'clean_platform_enhanced_{height}mm.png'
+        output_path = os.path.join(output_dir, "clean_platforms", filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        save_platform_figure(plt, output_path, pad_inches=0)
+        png_path = os.path.join("clean_platforms", filename)
+    else:
+        png_path = None
+    
+    # Save the shape data to a file
+    try:
+        # Extract build number from ABP filename
+        abp_name = os.path.basename(output_dir)
+        build_number = abp_name.split('-')[1].split('.')[0] if '-' in abp_name else ''
+        
+        # Create directory with build number
+        raw_data_dir = os.path.join(output_dir, f"imagePathRawData-{build_number}")
+        os.makedirs(raw_data_dir, exist_ok=True)
+
+        # Construct filename
+        data_filename = f'platform_layer_pathdata_enhanced_{height}mm.json'
+        data_output_path = os.path.join(raw_data_dir, data_filename)
+        
+        # Add debugging information
+        print(f"\nWriting enhanced shape data to: {data_output_path}")
+        print(f"Number of shapes being written: {len(shape_data_list)}")
+        
+        with open(data_output_path, 'w') as f:
+            json.dump(shape_data_list, f, indent=2)
+        
+        print(f"Successfully wrote enhanced shape data for height {height}mm")
+        
+    except Exception as e:
+        print(f"Error saving enhanced shape data for clean platform at height {height}mm: {str(e)}")
+        
+    return png_path

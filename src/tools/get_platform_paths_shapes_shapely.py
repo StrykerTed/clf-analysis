@@ -148,6 +148,20 @@ def main():
         alignment_style_only = False
         draw_excluded = False  # Temporarily disable to avoid blocking multiprocessing
         
+        # Get holes view interval from user at startup
+        holes_interval = input("Create Holes View for every x mm (default 10): ").strip()
+        if not holes_interval:
+            holes_interval = 10
+        else:
+            try:
+                holes_interval = float(holes_interval)
+            except ValueError:
+                print("Invalid input, using default 10mm")
+                holes_interval = 10
+        
+        # Control variables for PNG creation
+        create_composite_transparent_pngs = False  # Set to True to enable transparent composite PNG creation
+        
         logger.info("Configuration parameters:")
         logger.info(f"  - Draw Points: {draw_points}")
         logger.info(f"  - Draw Lines: {draw_lines}")
@@ -158,6 +172,8 @@ def main():
         logger.info(f"  - Save Clean PNG: {save_clean_png}")
         logger.info(f"  - Alignment Style Only: {alignment_style_only}")
         logger.info(f"  - Draw Excluded Paths: {draw_excluded}")
+        logger.info(f"  - Holes View Interval: {holes_interval}mm")
+        logger.info(f"  - Create Composite Transparent PNGs: {create_composite_transparent_pngs}")
 
         # Load exclusion patterns
         exclusion_patterns = load_exclusion_patterns(config_dir) if exclude_folders else []
@@ -386,15 +402,6 @@ def main():
 
         # Create holes views at regular intervals
         print("\nGenerating holes views at regular intervals...")
-        holes_interval = input("Create Holes View for every x mm (default 10): ").strip()
-        if not holes_interval:
-            holes_interval = 10
-        else:
-            try:
-                holes_interval = float(holes_interval)
-            except ValueError:
-                print("Invalid input, using default 10mm")
-                holes_interval = 10
         
         # Get max height for the range
         max_height = get_max_layer_height(clf_files)
@@ -502,7 +509,8 @@ def main():
                 print(f"Creating composite view at height {height}mm...")
                 composite_file = create_platform_composite_with_folders(clf_files, output_dir, 
                                                         height=height, 
-                                                        fill_closed=fill_closed)
+                                                        fill_closed=fill_closed,
+                                                        create_transparent_png=create_composite_transparent_pngs)
                 platform_info["platform_composites"].append({
                     "height": height,
                     "filename": composite_file
