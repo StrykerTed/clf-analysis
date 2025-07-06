@@ -129,7 +129,7 @@ def main():
     print(f"Project root: {project_root}")
 
     logger, log_queue, listener = setup_logging(project_root)
-    abp_file = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-424292.abp"
+    abp_file = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-430848.abp"
 
 
     logger.info(f"Processing ABP file: {abp_file}")

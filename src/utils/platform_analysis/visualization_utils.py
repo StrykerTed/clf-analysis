@@ -1088,10 +1088,10 @@ def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
                 exteriors_in_file = 0
                 holes_in_file = 0
                 
-                # Check if this file can contain holes (must contain 'skin' in filename, case-insensitive)
-                can_have_holes = 'skin' in clf_info['name'].lower()
+                # Check if this file can contain holes (must contain 'skin' in folder name, case-insensitive)
+                can_have_holes = 'skin' in clf_info['folder'].lower()
                 
-                # Process each shape to find holes using multiple paths within same shape
+                # Process each shape to find holes - use correct hole detection logic (Shape[1] Path[0])
                 for i, shape in enumerate(shapes):
                     if not hasattr(shape, 'points') or not shape.points:
                         continue
@@ -1101,32 +1101,19 @@ def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
                     if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
                         identifier = str(shape.model.id)
                     
-                    num_paths = len(shape.points)
-                    
                     # Process each path in the shape
                     for path_idx, points in enumerate(shape.points):
-                        if path_idx == 0:
-                            # First path is always exterior
-                            exterior_info = {
-                                'type': 'exterior',
-                                'points': points,
-                                'identifier': identifier,
-                                'clf_file': clf_info['name'],
-                                'clf_folder': clf_info['folder'],
-                                'color': color,
-                                'shape_index': i,
-                                'path_index': path_idx
-                            }
-                            all_exteriors.append(exterior_info)
-                            exteriors_in_file += 1
-                        elif can_have_holes and num_paths > 1:
-                            # Additional paths are holes if file can have holes
-                            print(f"    Found hole: Path {path_idx} in Shape {i} (ID:{identifier}) in {clf_info['name']}")
+                        # Check if this is a hole using the correct logic: Shape[1] Path[0]
+                        is_hole = (i == 1 and path_idx == 0 and len(shapes) >= 2 and can_have_holes)
+                        
+                        if is_hole:
+                            # This is a hole: Shape[1] Path[0] in a skin file
+                            print(f"    Found hole: Shape[{i}] Path[{path_idx}] (ID:{identifier}) in {clf_info['name']}")
                             
                             hole_info = {
                                 'type': 'hole',
                                 'points': points,
-                                'identifier': f"{identifier}_path_{path_idx}",
+                                'identifier': f"{identifier}_shape_{i}_path_{path_idx}",
                                 'clf_file': clf_info['name'],
                                 'clf_folder': clf_info['folder'],
                                 'color': color,
@@ -1137,6 +1124,20 @@ def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
                             }
                             all_holes.append(hole_info)
                             holes_in_file += 1
+                        else:
+                            # This is a regular exterior shape
+                            exterior_info = {
+                                'type': 'exterior',
+                                'points': points,
+                                'identifier': f"{identifier}_shape_{i}_path_{path_idx}",
+                                'clf_file': clf_info['name'],
+                                'clf_folder': clf_info['folder'],
+                                'color': color,
+                                'shape_index': i,
+                                'path_index': path_idx
+                            }
+                            all_exteriors.append(exterior_info)
+                            exteriors_in_file += 1
                 
                 # Add file statistics
                 if holes_in_file > 0:

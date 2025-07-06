@@ -2,7 +2,7 @@
 """
 Complete shape visualization program that shows ALL shapes at a given height.
 Shows both holes (Shape[1] Path[0]) in green and all other shapes in blue.
-This version (v3) shows all shapes from all file types for comprehensive analysis.
+This version (v4) analyzes preprocess build-430848 at height 152.00mm.
 """
 
 import os
@@ -40,11 +40,11 @@ from utils.myfuncs.file_utils import (
 
 
 def main():
-    """Main function to visualize ALL shapes from ALL folders at height 6.95mm."""
+    """Main function to visualize ALL shapes from ALL folders at height 152.00mm."""
     
     # Configuration
-    HEIGHT = 6.95  # mm
-    BUILD_DIR = "abp_contents/preprocess build-424292"
+    HEIGHT = 152.00  # mm
+    BUILD_DIR = "abp_contents/preprocess build-430848"
     
     # Create output directory
     output_dir = "my_outputs/holes_only_visualization"
