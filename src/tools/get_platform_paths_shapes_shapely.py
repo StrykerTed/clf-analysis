@@ -129,8 +129,20 @@ def main():
     print(f"Project root: {project_root}")
 
     logger, log_queue, listener = setup_logging(project_root)
-    abp_file = "/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-430848.abp"
-
+    
+    # Get build ID from user
+    build_id = input("Enter the build ID (e.g., 271360): ").strip()
+    if not build_id:
+        print("Build ID is required. Exiting.")
+        return
+    
+    abp_file = f"/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-{build_id}.abp"
+    
+    # Check if the ABP file exists
+    if not os.path.exists(abp_file):
+        print(f"ABP file not found: {abp_file}")
+        print("Please check the build ID and ensure the file exists.")
+        return
 
     logger.info(f"Processing ABP file: {abp_file}")
     
@@ -240,6 +252,13 @@ def main():
             "identifier_platform_views": [],
             "non_identifier_views": None,  # Add this line
             "closed_paths_summary": {},
+            "global_height_info": {
+                "min_height": None,
+                "max_height": None,
+                "num_samples": None,
+                "height_samples": [],
+                "padding_applied": None
+            },
             "exclusion_info": {
                 "exclusions_enabled": exclude_folders,
                 "patterns_used": exclusion_patterns if exclude_folders else [],
@@ -253,69 +272,169 @@ def main():
         # Track excluded files for reporting
         excluded_files_details = []
         
+        # STEP 1: Determine global height range across all files
+        print(f"\nStep 1: Determining global height range across all files...")
+        global_min_height = float('inf')
+        global_max_height = float('-inf')
+        valid_files = []
+        
         for clf_info in all_files_to_process:
             try:
                 is_excluded = should_skip_folder(clf_info['folder'], exclusion_patterns) if exclude_folders else False
                 
                 if is_excluded and not draw_excluded:
                     continue
-                elif not is_excluded:
-                    # Process included files normally
-                    print(f"\nProcessing: {clf_info['name']} in {clf_info['folder']}")
-                    part = CLFFile(clf_info['path'])
                     
+                part = CLFFile(clf_info['path'])
+                
+                if hasattr(part, 'box'):
+                    file_min = float(part.box.min[2])
+                    file_max = float(part.box.max[2])
+                    
+                    global_min_height = min(global_min_height, file_min)
+                    global_max_height = max(global_max_height, file_max)
+                    
+                    # Store file info for processing
                     file_info = {
                         "filename": clf_info['name'],
                         "folder": clf_info['folder'],
                         "num_layers": part.nlayers,
-                        "z_range": [part.box.min[2], part.box.max[2]] if hasattr(part, 'box') else None,
+                        "z_range": [file_min, file_max],
                         "bounds": {
-                            "x_range": [float(part.box.min[0]), float(part.box.max[0])] if hasattr(part, 'box') else None,
-                            "y_range": [float(part.box.min[1]), float(part.box.max[1])] if hasattr(part, 'box') else None,
-                            "z_range": [float(part.box.min[2]), float(part.box.max[2])] if hasattr(part, 'box') else None
-                        }
+                            "x_range": [float(part.box.min[0]), float(part.box.max[0])],
+                            "y_range": [float(part.box.min[1]), float(part.box.max[1])],
+                            "z_range": [file_min, file_max]
+                        },
+                        "clf_info": clf_info,
+                        "is_excluded": is_excluded,
+                        "part_object": part  # Keep reference for processing
                     }
-                    platform_info["files_analyzed"].append(file_info)
+                    valid_files.append(file_info)
                     
-                    if hasattr(part, 'box'):
-                        heights = np.linspace(part.box.min[2], part.box.max[2], 7)
-                        for height in heights:
-                            layer_info = analyze_layer(part, height, output_dir, clf_info, 
-                                                    path_counts, shape_types, file_identifier_counts,
-                                                    shapes_by_identifier,
-                                                    draw_points=draw_points, 
-                                                    draw_lines=draw_lines,
-                                                    save_layer_partials=save_layer_partials)
-                            if isinstance(layer_info, dict):
-                                platform_info["layers"].append(layer_info)
-                elif is_excluded and draw_excluded:
-                    # Process excluded files for excluded view
-                    print(f"\nProcessing EXCLUDED: {clf_info['name']} in {clf_info['folder']}")
-                    part = CLFFile(clf_info['path'])
+                    if not is_excluded:
+                        platform_info["files_analyzed"].append({
+                            "filename": clf_info['name'],
+                            "folder": clf_info['folder'],
+                            "num_layers": part.nlayers,
+                            "z_range": [file_min, file_max],
+                            "bounds": file_info["bounds"]
+                        })
                     
-                    # Track excluded file details
-                    excluded_file_detail = {
-                        "filename": clf_info['name'],
-                        "folder": clf_info['folder'],
-                        "full_path": clf_info['path'],
-                        "num_layers": part.nlayers if hasattr(part, 'nlayers') else 0,
-                        "matching_patterns": [pattern for pattern in exclusion_patterns if pattern in clf_info['folder']]
-                    }
-                    excluded_files_details.append(excluded_file_detail)
-                    
-                    if hasattr(part, 'box'):
-                        heights = np.linspace(part.box.min[2], part.box.max[2], 7)
-                        for height in heights:
-                            # Use separate dictionaries for excluded files
-                            analyze_layer(part, height, output_dir, clf_info, 
-                                        {}, {}, excluded_file_identifier_counts,
-                                        excluded_shapes_by_identifier,
-                                        draw_points=draw_points, 
-                                        draw_lines=draw_lines,
-                                        save_layer_partials=False)  # Don't save partials for excluded
-                
             except Exception as e:
-                print(f"Error processing {clf_info['name']}: {str(e)}")
+                print(f"Error reading {clf_info['name']}: {str(e)}")
+        
+        if global_min_height == float('inf'):
+            print("No valid CLF files found with height data!")
+            return platform_info
+        
+        # Add more generous padding to ensure we capture ALL edge cases
+        height_range = global_max_height - global_min_height
+        height_padding = max(height_range * 0.1, 5.0)  # 10% padding OR 5mm, whichever is larger
+        global_min_height = max(0, global_min_height - height_padding)
+        global_max_height = global_max_height + height_padding
+        
+        print(f"Global height range: {global_min_height:.2f} mm to {global_max_height:.2f} mm")
+        print(f"Applied padding: {height_padding:.2f} mm to ensure complete coverage")
+        
+        # STEP 2: Generate comprehensive height samples
+        # Use even more samples (25 instead of 15) to ensure complete coverage
+        num_height_samples = 25
+        global_heights = np.linspace(global_min_height, global_max_height, num_height_samples)
+        
+        # Also add specific heights that are commonly used in manufacturing
+        additional_heights = []
+        # Add heights at 0.1mm intervals around the edges
+        edge_sampling_range = 2.0  # Sample 2mm beyond detected range
+        for offset in np.arange(0.1, edge_sampling_range + 0.1, 0.1):
+            if global_min_height + offset <= global_max_height:
+                additional_heights.append(global_min_height + offset)
+            if global_max_height - offset >= global_min_height:
+                additional_heights.append(global_max_height - offset)
+        
+        # Combine and sort all heights
+        all_heights = np.concatenate([global_heights, additional_heights])
+        global_heights = np.unique(np.round(all_heights, 2))  # Remove duplicates and round
+        num_height_samples = len(global_heights)
+        
+        # Store global height info in platform_info
+        platform_info["global_height_info"] = {
+            "min_height": float(global_min_height),
+            "max_height": float(global_max_height),
+            "num_samples": num_height_samples,
+            "height_samples": [float(h) for h in global_heights],
+            "padding_applied": float(height_padding)
+        }
+        
+        print(f"Using {num_height_samples} height samples with enhanced edge coverage:")
+        print(f"  Range: {global_heights[0]:.2f} mm to {global_heights[-1]:.2f} mm")
+        print(f"  Samples include: {global_heights[0]:.2f}, {global_heights[1]:.2f}, ..., {global_heights[-2]:.2f}, {global_heights[-1]:.2f}")
+        print(f"  This should capture shapes at heights like 141.3mm that were previously missed")
+        
+        # STEP 3: Process each file at all global heights
+        print(f"\nStep 2: Processing {len(valid_files)} files at {num_height_samples} heights...")
+        
+        for file_info in valid_files:
+            clf_info = file_info["clf_info"]
+            part = file_info["part_object"]
+            is_excluded = file_info["is_excluded"]
+            
+            print(f"\nProcessing {'EXCLUDED' if is_excluded else 'INCLUDED'}: {clf_info['name']} in {clf_info['folder']}")
+            print(f"  File height range: {file_info['z_range'][0]:.2f} to {file_info['z_range'][1]:.2f} mm")
+            
+            heights_processed = 0
+            heights_in_range = 0
+            
+            # Process at all global heights (not just file-specific heights)
+            for height in global_heights:
+                # Use more generous tolerance to ensure we don't miss edge cases
+                tolerance = 1.0  # Increased from 0.1mm to 1.0mm for better coverage
+                if (height >= file_info['z_range'][0] - tolerance and 
+                    height <= file_info['z_range'][1] + tolerance):
+                    
+                    heights_in_range += 1
+                    
+                    if not is_excluded:
+                        # Process included files normally
+                        layer_info = analyze_layer(part, height, output_dir, clf_info, 
+                                                path_counts, shape_types, file_identifier_counts,
+                                                shapes_by_identifier,
+                                                draw_points=draw_points, 
+                                                draw_lines=draw_lines,
+                                                save_layer_partials=save_layer_partials)
+                        if isinstance(layer_info, dict):
+                            platform_info["layers"].append(layer_info)
+                        heights_processed += 1
+                        
+                    elif draw_excluded:
+                        # Process excluded files for excluded view
+                        analyze_layer(part, height, output_dir, clf_info, 
+                                    {}, {}, excluded_file_identifier_counts,
+                                    excluded_shapes_by_identifier,
+                                    draw_points=draw_points, 
+                                    draw_lines=draw_lines,
+                                    save_layer_partials=False)  # Don't save partials for excluded
+                        heights_processed += 1
+            
+            print(f"  Heights in file range: {heights_in_range}/{num_height_samples}")
+            print(f"  Heights actually processed: {heights_processed}")
+            if heights_in_range > heights_processed:
+                print(f"  WARNING: {heights_in_range - heights_processed} heights in range were not processed!")
+            
+            # Track excluded file details
+            if is_excluded and draw_excluded:
+                excluded_file_detail = {
+                    "filename": clf_info['name'],
+                    "folder": clf_info['folder'],
+                    "full_path": clf_info['path'],
+                    "num_layers": part.nlayers if hasattr(part, 'nlayers') else 0,
+                    "matching_patterns": [pattern for pattern in exclusion_patterns if pattern in clf_info['folder']],
+                    "heights_processed": heights_processed
+                }
+                excluded_files_details.append(excluded_file_detail)
+        
+        print(f"\nGlobal height sampling complete!")
+        print(f"Total height range processed: {global_min_height:.2f} to {global_max_height:.2f} mm")
+        print(f"Height samples used: {num_height_samples}")
         
         # Create file identifier summary
         for file_path, identifiers in file_identifier_counts.items():

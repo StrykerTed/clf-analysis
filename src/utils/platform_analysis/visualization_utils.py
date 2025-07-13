@@ -629,7 +629,7 @@ def is_shape_inside_shape(inner_points, outer_points):
             sample_indices = np.linspace(0, len(inner_points)-1, num_samples, dtype=int)
             sample_points = inner_points[sample_indices]
         
-        # All sample points should be inside the outer shape
+        # All sample points should be inside (allowing for edge cases)
         inside_checks = outer_path.contains_points(sample_points)
         
         # Return True if most points are inside (allowing for edge cases)
@@ -718,16 +718,39 @@ def create_transparent_paths_view(shapes_by_identifier, output_dir):
 def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
     """Create a 2500x2500 transparent PNG with just the path data from all identifiers, without chart elements."""
     try:
+        print(f"\n=== DEBUGGING create_transparent_paths_view_2500px ===")
+        
+        # Debug: Show all keys in shapes_by_identifier
+        all_keys = list(shapes_by_identifier.keys())
+        print(f"All keys in shapes_by_identifier: {all_keys}")
+        
+        # Check if 'no_identifier' exists and what it contains
+        if 'no_identifier' in shapes_by_identifier:
+            no_id_data = shapes_by_identifier['no_identifier']
+            print(f"'no_identifier' contains {no_id_data.get('count', 0)} shapes")
+            print(f"'no_identifier' height range: {no_id_data.get('height_range', 'unknown')}")
+        else:
+            print("'no_identifier' key not found in data")
+        
         # Skip the 'no_identifier' key if it exists
         identifiers = [id for id in shapes_by_identifier.keys() if id != 'no_identifier']
+        print(f"Identifiers after filtering 'no_identifier': {identifiers}")
+        
+        # ALSO track shapes without identifiers
+        no_identifier_shapes = shapes_by_identifier.get('no_identifier', {}).get('shapes', [])
+        print(f"Number of shapes without identifiers: {len(no_identifier_shapes)}")
         
         if not identifiers:
             print("No identifiers found for 2500px transparent paths view")
+            # But let's still check if we should draw 'no_identifier' shapes
+            if no_identifier_shapes:
+                print(f"WARNING: Found {len(no_identifier_shapes)} shapes without identifiers that are being excluded!")
             return None
             
         # Generate a color for each identifier
         colors = plt.cm.tab10(np.linspace(0, 1, len(identifiers)))
         identifier_colors = dict(zip(identifiers, colors))
+        print(f"Generated colors for {len(identifiers)} identifiers")
         
         # Create figure with transparent background - size adjusted for 2500px output
         # 8.33 inches * 300 DPI = ~2500px
@@ -747,20 +770,76 @@ def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
         ax.set_yticklabels([])
         plt.axis('off')
         
+        # Tracking variables
+        total_shapes_processed = 0
+        total_paths_drawn = 0
+        total_circles_drawn = 0
+        shapes_with_null_points = 0
+        point_type_shapes = 0
+        other_type_shapes = 0
+        
         # Plot each identifier with its assigned color
         for identifier, color in identifier_colors.items():
             shapes_data = shapes_by_identifier[identifier]
+            print(f"\n--- Processing identifier: {identifier} ---")
+            print(f"  Shapes data keys: {shapes_data.keys()}")
+            print(f"  Number of shapes: {shapes_data.get('count', 'unknown')}")
+            
+            height_range = shapes_data.get('height_range', [0, 0])
+            print(f"  Height range: {height_range[0]:.2f} to {height_range[1]:.2f} mm")
+            
+            # Check if this identifier covers the problematic 141.3mm height
+            if height_range[1] >= 141.0:
+                print(f"  *** This identifier SHOULD include shapes around 141.3mm! ***")
+            
+            shapes_list = shapes_data.get('shapes', [])
+            print(f"  Actual shapes list length: {len(shapes_list)}")
+            
+            # Sample a few shapes to show their heights
+            if len(shapes_list) > 0:
+                print(f"  Sample shape heights:")
+                for i in range(min(3, len(shapes_list))):
+                    shape_height = shapes_list[i].get('height', 'unknown')
+                    print(f"    Shape {i}: height = {shape_height}")
+            
+            identifier_paths_drawn = 0
+            identifier_circles_drawn = 0
+            identifier_null_points = 0
+            identifier_point_types = 0
+            identifier_other_types = 0
             
             # Draw all shapes for this identifier
-            for shape_info in shapes_data['shapes']:
-                if shape_info['points'] is not None:
+            for i, shape_info in enumerate(shapes_list):
+                total_shapes_processed += 1
+                
+                # Debug each shape
+                shape_type = shape_info.get('type', 'unknown')
+                has_points = shape_info.get('points') is not None
+                
+                print(f"    Shape {i}: type='{shape_type}', has_points={has_points}")
+                
+                if shape_info.get('points') is not None:
                     points = shape_info['points']
-                    if shape_info['type'] == 'point':
+                    print(f"      Points shape: {np.array(points).shape if isinstance(points, (list, np.ndarray)) else 'not array-like'}")
+                    
+                    if shape_info.get('type') == 'point':
+                        print(f"      Drawing point at: {points[0] if len(points) > 0 else 'no points'}")
                         plt.plot(points[0, 0], points[0, 1], 'o', 
                                 color=color, markersize=2, alpha=0.7)
+                        point_type_shapes += 1
+                        identifier_point_types += 1
                     else:
+                        print(f"      Drawing path with {len(points) if hasattr(points, '__len__') else 'unknown'} points")
                         draw_shape(plt, points, color)
-                elif shape_info['type'] == 'circle':
+                        total_paths_drawn += 1
+                        identifier_paths_drawn += 1
+                        other_type_shapes += 1
+                        identifier_other_types += 1
+                        
+                elif shape_info.get('type') == 'circle':
+                    center = shape_info.get('center', 'unknown')
+                    radius = shape_info.get('radius', 'unknown')
+                    print(f"      Drawing circle at center={center}, radius={radius}")
                     circle = plt.Circle(
                         shape_info['center'], 
                         shape_info['radius'], 
@@ -769,6 +848,39 @@ def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
                         alpha=0.7
                     )
                     plt.gca().add_artist(circle)
+                    total_circles_drawn += 1
+                    identifier_circles_drawn += 1
+                else:
+                    print(f"      SKIPPED: No points and not a circle")
+                    shapes_with_null_points += 1
+                    identifier_null_points += 1
+            
+            print(f"  Identifier {identifier} summary:")
+            print(f"    Paths drawn: {identifier_paths_drawn}")
+            print(f"    Circles drawn: {identifier_circles_drawn}")
+            print(f"    Point types: {identifier_point_types}")
+            print(f"    Other types: {identifier_other_types}")
+            print(f"    Null points: {identifier_null_points}")
+        
+        print(f"\n=== FINAL SUMMARY ===")
+        print(f"Total shapes processed: {total_shapes_processed}")
+        print(f"Total paths drawn: {total_paths_drawn}")
+        print(f"Total circles drawn: {total_circles_drawn}")
+        print(f"Point type shapes: {point_type_shapes}")
+        print(f"Other type shapes: {other_type_shapes}")
+        print(f"Shapes with null points (skipped): {shapes_with_null_points}")
+        print(f"Shapes without identifiers (excluded): {len(no_identifier_shapes)}")
+        
+        # Show details of excluded shapes
+        if no_identifier_shapes:
+            print(f"\n=== EXCLUDED SHAPES WITHOUT IDENTIFIERS ===")
+            for i, shape_info in enumerate(no_identifier_shapes[:5]):  # Show first 5
+                shape_type = shape_info.get('type', 'unknown')
+                has_points = shape_info.get('points') is not None
+                print(f"  Excluded shape {i}: type='{shape_type}', has_points={has_points}")
+            if len(no_identifier_shapes) > 5:
+                print(f"  ... and {len(no_identifier_shapes) - 5} more excluded shapes")
+        print(f"======================\n")
         
         plt.axis('equal')  # Ensure perfect square
         
@@ -780,11 +892,164 @@ def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
         save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
         plt.close()
         
+        # ALSO create version that includes 'no_identifier' shapes for comparison
+        create_transparent_paths_view_2500px_including_no_id(shapes_by_identifier, output_dir)
+        
         print(f"Created 2500px transparent paths view at: {output_path}")
         return os.path.join("identifier_views", filename)
         
     except Exception as e:
         print(f"Error creating 2500px transparent paths view: {str(e)}")
+        return None
+
+
+def create_transparent_paths_view_2500px_including_no_id(shapes_by_identifier, output_dir):
+    """Create a 2500x2500 transparent PNG with path data from ALL shapes, including those without identifiers."""
+    try:
+        print(f"\n=== DEBUGGING create_transparent_paths_view_2500px_including_no_id ===")
+        
+        # Get ALL keys including 'no_identifier'
+        all_keys = list(shapes_by_identifier.keys())
+        print(f"All keys in shapes_by_identifier: {all_keys}")
+        
+        # Process ALL identifiers (including 'no_identifier')
+        identifiers = list(shapes_by_identifier.keys())
+        print(f"Processing ALL identifiers: {identifiers}")
+        
+        if not identifiers:
+            print("No identifiers found at all")
+            return None
+            
+        # Generate a color for each identifier (including special color for no_identifier)
+        colors = plt.cm.tab10(np.linspace(0, 1, len(identifiers)))
+        identifier_colors = dict(zip(identifiers, colors))
+        
+        # Use a distinct color for 'no_identifier' shapes if present
+        if 'no_identifier' in identifier_colors:
+            identifier_colors['no_identifier'] = 'gray'  # Use gray for shapes without IDs
+        
+        print(f"Generated colors for {len(identifiers)} identifiers")
+        
+        # Create figure with transparent background - size adjusted for 2500px output
+        fig = plt.figure(figsize=(8.33, 8.33), facecolor="none")
+        ax = plt.gca()
+        ax.set_position([0, 0, 1, 1])  # Remove all margins
+        ax.patch.set_alpha(0)  # Make axes background transparent
+        
+        # Set platform limits - still representing the same 250mm x 250mm area
+        plt.xlim(-125, 125)
+        plt.ylim(-125, 125)
+        
+        # Turn off all chart elements
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        plt.axis('off')
+        
+        # Tracking variables
+        total_shapes_processed = 0
+        total_paths_drawn = 0
+        total_circles_drawn = 0
+        shapes_with_null_points = 0
+        point_type_shapes = 0
+        other_type_shapes = 0
+        
+        # Plot each identifier with its assigned color
+        for identifier, color in identifier_colors.items():
+            shapes_data = shapes_by_identifier[identifier]
+            print(f"\n--- Processing identifier: {identifier} ---")
+            print(f"  Shapes data keys: {shapes_data.keys()}")
+            print(f"  Number of shapes: {shapes_data.get('count', 'unknown')}")
+            print(f"  Height range: {shapes_data.get('height_range', 'unknown')}")
+            
+            shapes_list = shapes_data.get('shapes', [])
+            print(f"  Actual shapes list length: {len(shapes_list)}")
+            
+            identifier_paths_drawn = 0
+            identifier_circles_drawn = 0
+            identifier_null_points = 0
+            identifier_point_types = 0
+            identifier_other_types = 0
+            
+            # Draw all shapes for this identifier
+            for i, shape_info in enumerate(shapes_list):
+                total_shapes_processed += 1
+                
+                # Debug each shape
+                shape_type = shape_info.get('type', 'unknown')
+                has_points = shape_info.get('points') is not None
+                
+                print(f"    Shape {i}: type='{shape_type}', has_points={has_points}")
+                
+                if shape_info.get('points') is not None:
+                    points = shape_info['points']
+                    print(f"      Points shape: {np.array(points).shape if isinstance(points, (list, np.ndarray)) else 'not array-like'}")
+                    
+                    if shape_info.get('type') == 'point':
+                        print(f"      Drawing point at: {points[0] if len(points) > 0 else 'no points'}")
+                        plt.plot(points[0, 0], points[0, 1], 'o', 
+                                color=color, markersize=2, alpha=0.7)
+                        point_type_shapes += 1
+                        identifier_point_types += 1
+                    else:
+                        print(f"      Drawing path with {len(points) if hasattr(points, '__len__') else 'unknown'} points")
+                        draw_shape(plt, points, color)
+                        total_paths_drawn += 1
+                        identifier_paths_drawn += 1
+                        other_type_shapes += 1
+                        identifier_other_types += 1
+                        
+                elif shape_info.get('type') == 'circle':
+                    center = shape_info.get('center', 'unknown')
+                    radius = shape_info.get('radius', 'unknown')
+                    print(f"      Drawing circle at center={center}, radius={radius}")
+                    circle = plt.Circle(
+                        shape_info['center'], 
+                        shape_info['radius'], 
+                        color=color, 
+                        fill=False, 
+                        alpha=0.7
+                    )
+                    plt.gca().add_artist(circle)
+                    total_circles_drawn += 1
+                    identifier_circles_drawn += 1
+                else:
+                    print(f"      SKIPPED: No points and not a circle")
+                    shapes_with_null_points += 1
+                    identifier_null_points += 1
+            
+            print(f"  Identifier {identifier} summary:")
+            print(f"    Paths drawn: {identifier_paths_drawn}")
+            print(f"    Circles drawn: {identifier_circles_drawn}")
+            print(f"    Point types: {identifier_point_types}")
+            print(f"    Other types: {identifier_other_types}")
+            print(f"    Null points: {identifier_null_points}")
+        
+        print(f"\n=== FINAL SUMMARY (INCLUDING NO_ID) ===")
+        print(f"Total shapes processed: {total_shapes_processed}")
+        print(f"Total paths drawn: {total_paths_drawn}")
+        print(f"Total circles drawn: {total_circles_drawn}")
+        print(f"Point type shapes: {point_type_shapes}")
+        print(f"Other type shapes: {other_type_shapes}")
+        print(f"Shapes with null points (skipped): {shapes_with_null_points}")
+        print(f"============================================\n")
+        
+        plt.axis('equal')  # Ensure perfect square
+        
+        # Save the transparent plot
+        identifier_dir = os.path.join(output_dir, "identifier_views")
+        os.makedirs(identifier_dir, exist_ok=True)
+        filename = f'transparent_all_pathdata_WITH_NO_ID_250mmx250mm_2500px.png'
+        output_path = os.path.join(identifier_dir, filename)
+        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Created 2500px transparent paths view (WITH NO_ID) at: {output_path}")
+        return os.path.join("identifier_views", filename)
+        
+    except Exception as e:
+        print(f"Error creating 2500px transparent paths view (WITH NO_ID): {str(e)}")
         return None
 
 
