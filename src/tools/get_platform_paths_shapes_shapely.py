@@ -109,15 +109,100 @@ def process_holes_height(args):
         return {"height": height, "error": str(e), "success": False}
 
 
+def update_processes_log_start(build_path, start_time):
+    """Create or update the processes_run.json file with clf_analysis start information"""
+    import json
+    from datetime import datetime
+    
+    processes_log_path = os.path.join(build_path, "processes_run.json")
+    
+    # Load existing log or create new one
+    if os.path.exists(processes_log_path):
+        try:
+            with open(processes_log_path, 'r') as f:
+                processes_log = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            processes_log = {}
+    else:
+        processes_log = {}
+    
+    # Create clf_analysis entry with start info only
+    clf_analysis_entry = {
+        "start_time": start_time.isoformat(),
+        "end_time": None,
+        "duration_seconds": None,
+        "success": None,
+        "status": "running",
+        "timestamp": start_time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    # Update the log
+    processes_log["clf_analysis"] = clf_analysis_entry
+    
+    # Save the updated log
+    try:
+        with open(processes_log_path, 'w') as f:
+            json.dump(processes_log, f, indent=2)
+        print(f"Logged clf_analysis start: {processes_log_path}")
+    except Exception as e:
+        print(f"Error logging clf_analysis start: {str(e)}")
+
+
+def update_processes_log(build_path, start_time, end_time, success=True, error_message=None):
+    """Update the processes_run.json file with clf_analysis completion information"""
+    import json
+    from datetime import datetime
+    
+    processes_log_path = os.path.join(build_path, "processes_run.json")
+    
+    # Load existing log or create new one
+    if os.path.exists(processes_log_path):
+        try:
+            with open(processes_log_path, 'r') as f:
+                processes_log = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            processes_log = {}
+    else:
+        processes_log = {}
+    
+    # Create clf_analysis entry with completion info
+    clf_analysis_entry = {
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "duration_seconds": (end_time - start_time).total_seconds(),
+        "success": success,
+        "status": "completed" if success else "failed",
+        "timestamp": end_time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    if error_message:
+        clf_analysis_entry["error_message"] = error_message
+    
+    # Update the log
+    processes_log["clf_analysis"] = clf_analysis_entry
+    
+    # Save the updated log
+    try:
+        with open(processes_log_path, 'w') as f:
+            json.dump(processes_log, f, indent=2)
+        print(f"Updated processes log: {processes_log_path}")
+    except Exception as e:
+        print(f"Error updating processes log: {str(e)}")
+
+
 def main():
     # Clear the terminal screen based on OS
     import platform
     import os
+    from datetime import datetime
     if platform.system() == "Windows":
         os.system('cls')
     else:  # For Mac and Linux
         os.system('clear')
         
+    # Record start time
+    start_time = datetime.now()
+    
     wanted_layer_heights = list(range(1, 201, 5))
     
     # Use config.py for project paths
@@ -135,6 +220,14 @@ def main():
     if not build_id:
         print("Build ID is required. Exiting.")
         return
+    
+    # Set up build path early so we can log the start
+    main_build_folder = "/Users/ted.tedford/Documents/MIDAS"
+    build_path = os.path.join(main_build_folder, build_id)
+    os.makedirs(build_path, exist_ok=True)
+    
+    # Log program start immediately
+    update_processes_log_start(build_path, start_time)
     
     abp_file = f"/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-{build_id}.abp"
     
@@ -171,6 +264,10 @@ def main():
                 print("Invalid input, using default 10mm")
                 holes_interval = 10
         
+        # Get composite platform views preference from user
+        composite_views_input = input("Create composite platform views? yes/no (default no): ").strip().lower()
+        create_composite_views = composite_views_input in ['yes', 'y', '1', 'true']
+        
         # Control variables for PNG creation
         create_composite_transparent_pngs = False  # Set to True to enable transparent composite PNG creation
         
@@ -185,6 +282,7 @@ def main():
         logger.info(f"  - Alignment Style Only: {alignment_style_only}")
         logger.info(f"  - Draw Excluded Paths: {draw_excluded}")
         logger.info(f"  - Holes View Interval: {holes_interval}mm")
+        logger.info(f"  - Create Composite Views: {create_composite_views}")
         logger.info(f"  - Create Composite Transparent PNGs: {create_composite_transparent_pngs}")
 
         # Load exclusion patterns
@@ -195,14 +293,38 @@ def main():
             for pattern in exclusion_patterns:
                 logger.info(f"  - {pattern}")
 
-        # Create output directory based on the ABP filename
-        abp_name = os.path.basename(build_dir)
-        # Use MY_OUTPUTS from config.py as the parent directory
-        output_dir = create_output_folder(abp_name, MY_OUTPUTS, save_layer_partials, alignment_style_only)
-        logger.info(f"Created output directory at: {output_dir}")
+        # Create output directory using MIDAS-style structure with build ID
+        # build_path was already created earlier for logging
         
-        # Setup all required directories
-        setup_directories(output_dir, save_layer_partials, save_clean)
+        # Create clf_analysis subfolder
+        clf_analysis_path = os.path.join(build_path, "clf_analysis")
+        
+        # Clear existing clf_analysis folder if it exists and recreate it
+        if os.path.exists(clf_analysis_path):
+            import shutil
+            shutil.rmtree(clf_analysis_path)
+            print(f"Cleared existing clf_analysis folder: {clf_analysis_path}")
+        
+        os.makedirs(clf_analysis_path, exist_ok=True)
+        
+        # Create subdirectories within clf_analysis
+        layer_partials_dir = os.path.join(clf_analysis_path, "layer_partials")
+        composite_platforms_dir = os.path.join(clf_analysis_path, "composite_platforms")
+        identifier_views_dir = os.path.join(clf_analysis_path, "identifier_views")
+        clean_platforms_dir = os.path.join(clf_analysis_path, "clean_platforms")
+        
+        os.makedirs(layer_partials_dir, exist_ok=True)
+        os.makedirs(composite_platforms_dir, exist_ok=True)
+        os.makedirs(identifier_views_dir, exist_ok=True)
+        os.makedirs(clean_platforms_dir, exist_ok=True)
+        
+        output_dir = clf_analysis_path
+        
+        print(f"Created build directory: {build_path}")
+        print(f"Created clf_analysis directory: {clf_analysis_path}")
+        print(f"Created subdirectories: layer_partials, composite_platforms, identifier_views, clean_platforms")
+        
+        logger.info(f"Created output directory at: {output_dir}")
         
         logger.info(f"Looking for build directory at: {build_dir}")
         if not os.path.exists(build_dir):
@@ -620,23 +742,26 @@ def main():
         # Print summary information
         print_identifier_summary(platform_info["file_identifier_summary"], closed_paths_found)
         
-        # Create composite platform views with original layer heights
-   
-        print("\nGenerating platform composite views...")
-        for height in wanted_layer_heights:
-            try:
-                print(f"Creating composite view at height {height}mm...")
-                composite_file = create_platform_composite_with_folders(clf_files, output_dir, 
-                                                        height=height, 
-                                                        fill_closed=fill_closed,
-                                                        create_transparent_png=create_composite_transparent_pngs)
-                platform_info["platform_composites"].append({
-                    "height": height,
-                    "filename": composite_file
-                })
-                print(f"Created platform composite at {height}mm: {composite_file}")
-            except Exception as e:
-                print(f"Error creating composite at height {height}mm: {str(e)}")
+        # Create composite platform views with original layer heights (conditional)
+        if create_composite_views:
+            print("\nGenerating platform composite views...")
+            for height in wanted_layer_heights:
+                try:
+                    print(f"Creating composite view at height {height}mm...")
+                    composite_file = create_platform_composite_with_folders(clf_files, output_dir, 
+                                                            height=height, 
+                                                            fill_closed=fill_closed,
+                                                            create_transparent_png=create_composite_transparent_pngs)
+                    platform_info["platform_composites"].append({
+                        "height": height,
+                        "filename": composite_file
+                    })
+                    print(f"Created platform composite at {height}mm: {composite_file}")
+                except Exception as e:
+                    print(f"Error creating composite at height {height}mm: {str(e)}")
+        else:
+            print("\nSkipping platform composite views (user selected no)")
+            platform_info["platform_composites"] = []
 
         # Create clean platform views - process all heights for JSON but only create PNGs for selected heights
         if save_clean:
@@ -711,9 +836,20 @@ def main():
         print_analysis_summary(platform_info, closed_paths_found, shape_types, output_dir, summary_path)
             
         logger.info("Platform path analysis completed successfully")
+        
+        # Record successful completion
+        end_time = datetime.now()
+        update_processes_log(build_path, start_time, end_time, success=True)
             
     except Exception as e:
         logger.error(f"Error in main execution: {str(e)}", exc_info=True)
+        
+        # Record failed completion
+        end_time = datetime.now()
+        if 'build_path' in locals():
+            update_processes_log(build_path, start_time, end_time, success=False, error_message=str(e))
+        else:
+            print(f"Could not log process failure - build_path not available: {str(e)}")
     finally:
         # Clean up the logging listener
         logger.info("Shutting down logging listener")
