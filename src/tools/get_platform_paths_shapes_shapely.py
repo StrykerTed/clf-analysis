@@ -40,13 +40,17 @@ from utils.myfuncs.logging_utils import setup_logging
 # Import new modularized functions
 from utils.platform_analysis.visualization_utils import (
     create_combined_identifier_platform_view,
-    create_combined_excluded_identifier_platform_view,
     create_non_identifier_platform_view,
     create_identifier_platform_view,
     create_platform_composite_with_folders, 
     create_platform_composite,
     create_clean_platform,
     create_combined_holes_platform_view
+)
+
+from utils.platform_analysis.exclusion_handler import (
+    process_excluded_files_details,
+    track_excluded_file_detail
 )
 
 from utils.platform_analysis.data_processing import (
@@ -626,14 +630,9 @@ def main():
             
             # Track excluded file details
             if is_excluded and draw_excluded:
-                excluded_file_detail = {
-                    "filename": clf_info['name'],
-                    "folder": clf_info['folder'],
-                    "full_path": clf_info['path'],
-                    "num_layers": part.nlayers if hasattr(part, 'nlayers') else 0,
-                    "matching_patterns": [pattern for pattern in exclusion_patterns if pattern in clf_info['folder']],
-                    "heights_processed": heights_processed
-                }
+                excluded_file_detail = track_excluded_file_detail(
+                    clf_info, part, exclusion_patterns, heights_processed
+                )
                 excluded_files_details.append(excluded_file_detail)
         
         print(f"\nGlobal height sampling complete!")
@@ -762,64 +761,11 @@ def main():
             }
             print(f"Created {len(successful_holes_views)} holes views with total of {total_holes_found} holes across all heights")
 
-        # Create combined view of excluded identifiers if requested
-        if draw_excluded and excluded_shapes_by_identifier:
-            print("\nGenerating combined EXCLUDED identifier platform view...")
-            excluded_combined_view_file = create_combined_excluded_identifier_platform_view(excluded_shapes_by_identifier, output_dir)
-            if excluded_combined_view_file:
-                platform_info["combined_excluded_identifier_view"] = {
-                    "filename": excluded_combined_view_file,
-                    "total_identifiers": len([id for id in excluded_shapes_by_identifier.keys() if id != 'no_identifier'])
-                }
-                print(f"Created combined EXCLUDED identifier view with {platform_info['combined_excluded_identifier_view']['total_identifiers']} identifiers")
-
-        # Create exclusion details file if requested
-        if draw_excluded and excluded_files_details:
-            print("\nCreating exclusion details file...")
-            import csv
-            
-            # Create CSV file
-            csv_filename = "excluded_files_details.csv"
-            csv_path = os.path.join(output_dir, csv_filename)
-            
-            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['filename', 'folder', 'full_path', 'num_layers', 'matching_patterns']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                
-                writer.writeheader()
-                for detail in excluded_files_details:
-                    # Convert list to string for CSV
-                    detail_copy = detail.copy()
-                    detail_copy['matching_patterns'] = ', '.join(detail['matching_patterns'])
-                    writer.writerow(detail_copy)
-            
-            # Create TXT file
-            txt_filename = "excluded_files_details.txt"
-            txt_path = os.path.join(output_dir, txt_filename)
-            
-            with open(txt_path, 'w', encoding='utf-8') as txtfile:
-                txtfile.write("EXCLUDED FILES DETAILS\n")
-                txtfile.write("=" * 50 + "\n\n")
-                txtfile.write(f"Total excluded files: {len(excluded_files_details)}\n")
-                txtfile.write(f"Exclusion patterns used: {', '.join(exclusion_patterns)}\n\n")
-                
-                for i, detail in enumerate(excluded_files_details, 1):
-                    txtfile.write(f"{i}. {detail['filename']}\n")
-                    txtfile.write(f"   Folder: {detail['folder']}\n")
-                    txtfile.write(f"   Full Path: {detail['full_path']}\n")
-                    txtfile.write(f"   Number of Layers: {detail['num_layers']}\n")
-                    txtfile.write(f"   Matching Patterns: {', '.join(detail['matching_patterns'])}\n")
-                    txtfile.write("-" * 40 + "\n\n")
-            
-            platform_info["exclusion_details_files"] = {
-                "csv_file": csv_filename,
-                "txt_file": txt_filename,
-                "total_excluded": len(excluded_files_details)
-            }
-            
-            print(f"Created exclusion details CSV: {csv_path}")
-            print(f"Created exclusion details TXT: {txt_path}")
-            print(f"Total excluded files documented: {len(excluded_files_details)}")
+        # Process all exclusion-related functionality
+        process_excluded_files_details(
+            draw_excluded, excluded_files_details, exclusion_patterns, 
+            excluded_shapes_by_identifier, output_dir, platform_info
+        )
 
         # Print summary information
         print_identifier_summary(platform_info["file_identifier_summary"], closed_paths_found)

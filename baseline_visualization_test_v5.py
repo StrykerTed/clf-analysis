@@ -109,6 +109,10 @@ def main():
     
     # Process each CLF file
     for clf_info in clf_files:
+        # Initialize file-level flags for each file
+        file_has_holes = False
+        file_has_shapes = False
+        
         try:
             part = CLFFile(clf_info['path'])
             if not hasattr(part, 'box'):
@@ -135,8 +139,8 @@ def main():
                             is_hole = (shape_idx == 1 and path_idx == 0 and len(layer.shapes) >= 2)
                             
                             # Determine color based on number of points or hole status
-                            if len(path) == 66:  # Highlight paths with 66 points in red
-                                color = 'red'
+                            if len(path) == 66:  # Highlight paths with 66 points in red or orange if hole
+                                color = 'orange' if is_hole else 'red'
                                 linewidth = 0.5
                                 print(f"  Found potential hole (66 points): Shape[{shape_idx}] Path[{path_idx}] with {len(path)} points in {clf_info['folder']}")
                             elif is_hole:
@@ -172,11 +176,14 @@ def main():
                     plt.gca().add_artist(circle)
                     
                     print(f"  Found circle: Shape[{shape_idx}] radius={shape.radius} in {clf_info['folder']}")
-                
-                if file_has_holes:
-                    total_files_with_holes += 1
-                if file_has_shapes:
-                    total_files_with_shapes += 1
+            
+            # Update file-level counters after processing all shapes in the file
+            if file_has_holes:
+                total_files_with_holes += 1
+                files_with_holes.add(clf_info['name'])
+            if file_has_shapes:
+                total_files_with_shapes += 1
+                files_with_shapes.add(clf_info['name'])
             
             files_processed += 1
             print(f"Processed {clf_info['name']}: found holes in layer at {HEIGHT}mm")
