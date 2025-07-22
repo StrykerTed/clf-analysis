@@ -14,6 +14,7 @@ import numpy as np
 from matplotlib.patches import Polygon
 import json
 
+
 # Add project root to path
 project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
@@ -38,7 +39,6 @@ from utils.myfuncs.file_utils import (
     load_exclusion_patterns
 )
 
-
 def main():
     """Main function to visualize ALL shapes from ALL folders at height 152.00mm."""
     
@@ -53,7 +53,7 @@ def main():
     print(f"Starting baseline visualization at height {HEIGHT}mm")
     print(f"Build directory: {BUILD_DIR}")
     print(f"Output directory: {output_dir}")
-    
+
     # Load exclusion patterns from the config file (same as main program)
     try:
         script_dir = os.path.join(project_root, 'src', 'config')
@@ -98,6 +98,8 @@ def main():
     # Statistics
     total_shapes = 0
     total_holes = 0
+    files_with_shapes = set()
+    files_with_holes = set()
     total_files_with_holes = 0
     total_files_with_shapes = 0
     files_processed = 0
@@ -119,60 +121,57 @@ def main():
                 continue
                 
             # Process each shape in the layer - show ALL shapes and identify holes
-            if hasattr(layer, 'shapes') and len(layer.shapes) >= 1:
-                file_has_holes = False
-                file_has_shapes = False
+            for shape_idx, shape in enumerate(layer.shapes):
+                if hasattr(shape, 'points') and shape.points:
+                    for path_idx, path in enumerate(shape.points):
+                        if len(path) >= 3:  # Valid path with at least 3 points
+                            total_shapes += 1
+                            file_has_shapes = True
+                            
+                            # Convert to numpy array
+                            points = np.array(path)
+                            
+                            # Check if this is a hole (Shape[1] Path[0])
+                            is_hole = (shape_idx == 1 and path_idx == 0 and len(layer.shapes) >= 2)
+                            
+                            # Determine color based on number of points or hole status
+                            if len(path) == 66:  # Highlight paths with 66 points in red
+                                color = 'red'
+                                linewidth = 0.5
+                                print(f"  Found potential hole (66 points): Shape[{shape_idx}] Path[{path_idx}] with {len(path)} points in {clf_info['folder']}")
+                            elif is_hole:
+                                total_holes += 1
+                                file_has_holes = True
+                                color = 'darkgreen'
+                                linewidth = 1
+                                print(f"  Found hole: Shape[{shape_idx}] Path[{path_idx}] with {len(path)} points in {clf_info['folder']}")
+                            else:
+                                color = 'blue'
+                                linewidth = 0.5
+                                print(f"  Found shape: Shape[{shape_idx}] Path[{path_idx}] with {len(path)} points in {clf_info['folder']}")
+                            
+                            # Draw the shape with the determined color
+                            draw_shape(plt, points, 
+                                    color=color, 
+                                    alpha=0.8 if color == 'darkgreen' else 0.6,
+                                    linewidth=linewidth)
                 
-                # Process all shapes in the layer
-                for shape_idx, shape in enumerate(layer.shapes):
-                    if hasattr(shape, 'points') and shape.points:
-                        for path_idx, path in enumerate(shape.points):
-                            if len(path) >= 3:  # Valid path with at least 3 points
-                                total_shapes += 1
-                                file_has_shapes = True
-                                
-                                # Convert to numpy array
-                                points = np.array(path)
-                                
-                                # Check if this is a hole (Shape[1] Path[0])
-                                is_hole = (shape_idx == 1 and path_idx == 0 and len(layer.shapes) >= 2)
-                                
-                                if is_hole:
-                                    total_holes += 1
-                                    file_has_holes = True
-                                    
-                                    # Draw hole in green
-                                    draw_shape(plt, points, 
-                                             color='darkgreen', 
-                                             alpha=0.8,
-                                             linewidth=1)
-                                    
-                                    print(f"  Found hole: Shape[{shape_idx}] Path[{path_idx}] with {len(path)} points in {clf_info['folder']}")
-                                else:
-                                    # Draw regular shape in blue
-                                    draw_shape(plt, points, 
-                                             color='blue', 
-                                             alpha=0.6,
-                                             linewidth=1.5)
-                                    
-                                    print(f"  Found shape: Shape[{shape_idx}] Path[{path_idx}] with {len(path)} points in {clf_info['folder']}")
+                elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
+                    # Handle circles
+                    total_shapes += 1
+                    file_has_shapes = True
                     
-                    elif hasattr(shape, 'radius') and hasattr(shape, 'center'):
-                        # Handle circles
-                        total_shapes += 1
-                        file_has_shapes = True
-                        
-                        circle = plt.Circle(
-                            shape.center, 
-                            shape.radius, 
-                            color='blue', 
-                            fill=False, 
-                            alpha=0.6,
-                            linewidth=2
-                        )
-                        plt.gca().add_artist(circle)
-                        
-                        print(f"  Found circle: Shape[{shape_idx}] radius={shape.radius} in {clf_info['folder']}")
+                    circle = plt.Circle(
+                        shape.center, 
+                        shape.radius, 
+                        color='blue', 
+                        fill=False, 
+                        alpha=0.6,
+                        linewidth=2
+                    )
+                    plt.gca().add_artist(circle)
+                    
+                    print(f"  Found circle: Shape[{shape_idx}] radius={shape.radius} in {clf_info['folder']}")
                 
                 if file_has_holes:
                     total_files_with_holes += 1
@@ -183,7 +182,7 @@ def main():
             print(f"Processed {clf_info['name']}: found holes in layer at {HEIGHT}mm")
             
         except Exception as e:
-            print(f"Error processing {clf_info['name']}: {e}")
+            print(f"Error processing {clf_info['name']}: {str(e)}")
             continue
     
     # Add title and labels

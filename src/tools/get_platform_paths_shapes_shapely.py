@@ -108,86 +108,158 @@ def process_holes_height(args):
         print(f"Error creating holes view at height {height}mm: {str(e)}")
         return {"height": height, "error": str(e), "success": False}
 
-
-def update_processes_log_start(build_path, start_time):
-    """Create or update the processes_run.json file with clf_analysis start information"""
+def create_process_log_start(build_path, program_name, start_time):
+    """
+    Create or update the processes_run.json file to mark the start of a program execution.
+    This creates a log entry with status "running" that can be monitored externally.
+    
+    Args:
+        build_path (str): Path to the build directory
+        program_name (str): Name of the program that was run
+        start_time (datetime): When the program started
+    
+    Returns:
+        str: Unique run_id for this execution (timestamp format)
+    """
     import json
-    from datetime import datetime
+    from pathlib import Path
     
-    processes_log_path = os.path.join(build_path, "processes_run.json")
+    processes_file = Path(build_path) / "processes_run.json"
+    run_id = start_time.strftime("%Y%m%d_%H%M%S")
     
-    # Load existing log or create new one
-    if os.path.exists(processes_log_path):
-        try:
-            with open(processes_log_path, 'r') as f:
-                processes_log = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
-            processes_log = {}
-    else:
-        processes_log = {}
-    
-    # Create clf_analysis entry with start info only
-    clf_analysis_entry = {
+    # Create the entry for this program run (initial state)
+    run_entry = {
+        "run_id": run_id,
         "start_time": start_time.isoformat(),
         "end_time": None,
         "duration_seconds": None,
-        "success": None,
         "status": "running",
-        "timestamp": start_time.strftime("%Y-%m-%d %H:%M:%S")
+        "timestamp_folder": run_id
     }
     
-    # Update the log
-    processes_log["clf_analysis"] = clf_analysis_entry
+    # Load existing data or create new structure
+    if processes_file.exists():
+        try:
+            with open(processes_file, 'r') as f:
+                processes_data = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            processes_data = {}
+    else:
+        processes_data = {}
     
-    # Save the updated log
+    # Initialize program entry if it doesn't exist or has old structure
+    if program_name not in processes_data:
+        processes_data[program_name] = {
+            "description": "CLF analysis and platform path processing",
+            "runs": []
+        }
+    else:
+        # Check if existing entry has the new "runs" structure
+        if "runs" not in processes_data[program_name]:
+            # Convert old structure to new structure
+            old_entry = processes_data[program_name].copy()
+            processes_data[program_name] = {
+                "description": "CLF analysis and platform path processing",
+                "runs": []
+            }
+            # If there was old data, preserve it as a legacy run
+            if "start_time" in old_entry:
+                legacy_run = {
+                    "run_id": "legacy_run",
+                    "start_time": old_entry.get("start_time"),
+                    "end_time": old_entry.get("end_time"),
+                    "duration_seconds": old_entry.get("duration_seconds"),
+                    "status": old_entry.get("status", "unknown"),
+                    "timestamp_folder": "legacy"
+                }
+                processes_data[program_name]["runs"].append(legacy_run)
+    
+    # Add this run to the program's history
+    processes_data[program_name]["runs"].append(run_entry)
+    
+    # Save the updated data
     try:
-        with open(processes_log_path, 'w') as f:
-            json.dump(processes_log, f, indent=2)
-        print(f"Logged clf_analysis start: {processes_log_path}")
+        with open(processes_file, 'w') as f:
+            json.dump(processes_data, f, indent=2)
+        return run_id
     except Exception as e:
-        print(f"Error logging clf_analysis start: {str(e)}")
+        # Don't fail the main program if logging fails
+        print(f"Warning: Could not create process log start: {e}")
+        return run_id
 
 
-def update_processes_log(build_path, start_time, end_time, success=True, error_message=None):
-    """Update the processes_run.json file with clf_analysis completion information"""
+def update_process_log_finish(build_path, program_name, run_id, end_time, status="completed"):
+    """
+    Update the processes_run.json file to mark the completion of a program execution.
+    This updates an existing log entry from "running" to the final status.
+    
+    Args:
+        build_path (str): Path to the build directory
+        program_name (str): Name of the program that was run
+        run_id (str): Unique run identifier from create_process_log_start
+        end_time (datetime): When the program finished
+        status (str): Status of the execution (completed, failed, etc.)
+    """
     import json
+    from pathlib import Path
     from datetime import datetime
     
-    processes_log_path = os.path.join(build_path, "processes_run.json")
+    processes_file = Path(build_path) / "processes_run.json"
     
-    # Load existing log or create new one
-    if os.path.exists(processes_log_path):
-        try:
-            with open(processes_log_path, 'r') as f:
-                processes_log = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
-            processes_log = {}
-    else:
-        processes_log = {}
+    # Load existing data
+    if not processes_file.exists():
+        print(f"Warning: Process log file not found: {processes_file}")
+        return False
     
-    # Create clf_analysis entry with completion info
-    clf_analysis_entry = {
-        "start_time": start_time.isoformat(),
-        "end_time": end_time.isoformat(),
-        "duration_seconds": (end_time - start_time).total_seconds(),
-        "success": success,
-        "status": "completed" if success else "failed",
-        "timestamp": end_time.strftime("%Y-%m-%d %H:%M:%S")
-    }
-    
-    if error_message:
-        clf_analysis_entry["error_message"] = error_message
-    
-    # Update the log
-    processes_log["clf_analysis"] = clf_analysis_entry
-    
-    # Save the updated log
     try:
-        with open(processes_log_path, 'w') as f:
-            json.dump(processes_log, f, indent=2)
-        print(f"Updated processes log: {processes_log_path}")
+        with open(processes_file, 'r') as f:
+            processes_data = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        print(f"Warning: Could not read process log file: {processes_file}")
+        return False
+    
+    # Find and update the specific run entry
+    if program_name not in processes_data:
+        print(f"Warning: Program {program_name} not found in process log")
+        return False
+    
+    # Check if the program entry has the new "runs" structure
+    if "runs" not in processes_data[program_name]:
+        print(f"Warning: Program {program_name} has old structure without 'runs' array")
+        return False
+    
+    # Find the run entry with matching run_id
+    run_found = False
+    for run_entry in processes_data[program_name]["runs"]:
+        if run_entry.get("run_id") == run_id:
+            # Parse start time to calculate duration
+            try:
+                start_time_str = run_entry["start_time"]
+                start_time = datetime.fromisoformat(start_time_str)
+                duration_seconds = (end_time - start_time).total_seconds()
+            except Exception as e:
+                print(f"Warning: Could not calculate duration: {e}")
+                duration_seconds = None
+            
+            # Update the entry
+            run_entry["end_time"] = end_time.isoformat()
+            run_entry["duration_seconds"] = duration_seconds
+            run_entry["status"] = status
+            run_found = True
+            break
+    
+    if not run_found:
+        print(f"Warning: Run with ID {run_id} not found for program {program_name}")
+        return False
+    
+    # Save the updated data
+    try:
+        with open(processes_file, 'w') as f:
+            json.dump(processes_data, f, indent=2)
+        return True
     except Exception as e:
-        print(f"Error updating processes log: {str(e)}")
+        print(f"Warning: Could not update process log finish: {e}")
+        return False
 
 
 def main():
@@ -226,8 +298,9 @@ def main():
     build_path = os.path.join(main_build_folder, build_id)
     os.makedirs(build_path, exist_ok=True)
     
-    # Log program start immediately
-    update_processes_log_start(build_path, start_time)
+    # Create process log entry to mark the start of execution using new function
+    run_id = create_process_log_start(build_path, "clf_analysis", start_time)
+    logger.info(f"Started process logging with run_id: {run_id}")
     
     abp_file = f"/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-{build_id}.abp"
     
@@ -235,6 +308,9 @@ def main():
     if not os.path.exists(abp_file):
         print(f"ABP file not found: {abp_file}")
         print("Please check the build ID and ensure the file exists.")
+        # Log the failure and stop
+        end_time = datetime.now()
+        update_process_log_finish(build_path, "clf_analysis", run_id, end_time, "failed")
         return
 
     logger.info(f"Processing ABP file: {abp_file}")
@@ -329,6 +405,9 @@ def main():
         logger.info(f"Looking for build directory at: {build_dir}")
         if not os.path.exists(build_dir):
             logger.error("Build directory not found!")
+            # Log the failure and stop
+            end_time = datetime.now()
+            update_process_log_finish(build_path, "clf_analysis", run_id, end_time, "failed")
             return
             
         logger.info("Finding CLF files...")
@@ -447,7 +526,10 @@ def main():
         
         if global_min_height == float('inf'):
             print("No valid CLF files found with height data!")
-            return platform_info
+            # Log the failure and stop
+            end_time = datetime.now()
+            update_process_log_finish(build_path, "clf_analysis", run_id, end_time, "failed")
+            return
         
         # Add more generous padding to ensure we capture ALL edge cases
         height_range = global_max_height - global_min_height
@@ -839,21 +921,28 @@ def main():
         
         # Record successful completion
         end_time = datetime.now()
-        update_processes_log(build_path, start_time, end_time, success=True)
+        logger.info(f"Program completed successfully. Total duration: {(end_time - start_time).total_seconds():.2f} seconds")
+        
+        # Update the process execution log
+        try:
+            update_process_log_finish(build_path, "clf_analysis", run_id, end_time, "completed")
+            logger.info(f"Updated process log: {os.path.join(build_path, 'processes_run.json')}")
+        except Exception as e:
+            logger.warning(f"Could not update process log: {e}")
             
     except Exception as e:
         logger.error(f"Error in main execution: {str(e)}", exc_info=True)
         
         # Record failed completion
         end_time = datetime.now()
-        if 'build_path' in locals():
-            update_processes_log(build_path, start_time, end_time, success=False, error_message=str(e))
+        if 'build_path' in locals() and 'run_id' in locals():
+            update_process_log_finish(build_path, "clf_analysis", run_id, end_time, "failed")
         else:
-            print(f"Could not log process failure - build_path not available: {str(e)}")
+            print(f"Could not log process failure - build_path or run_id not available: {str(e)}")
     finally:
         # Clean up the logging listener
         logger.info("Shutting down logging listener")
         listener.stop()
-             
+
 if __name__ == "__main__":
     main()
