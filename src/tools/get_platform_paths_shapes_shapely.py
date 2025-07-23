@@ -36,6 +36,7 @@ from utils.myfuncs.print_utils import (
 )
 
 from utils.myfuncs.logging_utils import setup_logging
+from utils.process_logging import create_process_log_start, update_process_log_finish
 
 # Import new modularized functions
 from utils.platform_analysis.visualization_utils import (
@@ -62,6 +63,11 @@ from utils.platform_analysis.data_processing import (
 from utils.platform_analysis.config_utils import (
     get_project_paths,
     setup_directories
+)
+
+from utils.folder_utils import (
+    create_directory_structure,
+    setup_build_directory
 )
 
 # Define helper function for multiprocessing
@@ -92,180 +98,6 @@ def process_height(args):
         return {"height": height, "error": str(e), "success": False}
 
 
-# Define helper function for holes processing
-def process_holes_height(args):
-    height, clf_files, output_dir = args
-    try:
-        print(f"Processing holes view at height {height}mm...")
-        holes_view_file, holes_stats = create_combined_holes_platform_view(clf_files, output_dir, height=height)
-        if holes_view_file:
-            result = {
-                "height": height,
-                "filename": holes_view_file,
-                "holes_statistics": holes_stats,
-                "success": True
-            }
-            print(f"Created holes view at {height}mm: {holes_stats['total_holes']} holes found")
-            return result
-        return {"height": height, "success": False}
-    except Exception as e:
-        print(f"Error creating holes view at height {height}mm: {str(e)}")
-        return {"height": height, "error": str(e), "success": False}
-
-def create_process_log_start(build_path, program_name, start_time):
-    """
-    Create or update the processes_run.json file to mark the start of a program execution.
-    This creates a log entry with status "running" that can be monitored externally.
-    
-    Args:
-        build_path (str): Path to the build directory
-        program_name (str): Name of the program that was run
-        start_time (datetime): When the program started
-    
-    Returns:
-        str: Unique run_id for this execution (timestamp format)
-    """
-    import json
-    from pathlib import Path
-    
-    processes_file = Path(build_path) / "processes_run.json"
-    run_id = start_time.strftime("%Y%m%d_%H%M%S")
-    
-    # Create the entry for this program run (initial state)
-    run_entry = {
-        "run_id": run_id,
-        "start_time": start_time.isoformat(),
-        "end_time": None,
-        "duration_seconds": None,
-        "status": "running",
-        "timestamp_folder": run_id
-    }
-    
-    # Load existing data or create new structure
-    if processes_file.exists():
-        try:
-            with open(processes_file, 'r') as f:
-                processes_data = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
-            processes_data = {}
-    else:
-        processes_data = {}
-    
-    # Initialize program entry if it doesn't exist or has old structure
-    if program_name not in processes_data:
-        processes_data[program_name] = {
-            "description": "CLF analysis and platform path processing",
-            "runs": []
-        }
-    else:
-        # Check if existing entry has the new "runs" structure
-        if "runs" not in processes_data[program_name]:
-            # Convert old structure to new structure
-            old_entry = processes_data[program_name].copy()
-            processes_data[program_name] = {
-                "description": "CLF analysis and platform path processing",
-                "runs": []
-            }
-            # If there was old data, preserve it as a legacy run
-            if "start_time" in old_entry:
-                legacy_run = {
-                    "run_id": "legacy_run",
-                    "start_time": old_entry.get("start_time"),
-                    "end_time": old_entry.get("end_time"),
-                    "duration_seconds": old_entry.get("duration_seconds"),
-                    "status": old_entry.get("status", "unknown"),
-                    "timestamp_folder": "legacy"
-                }
-                processes_data[program_name]["runs"].append(legacy_run)
-    
-    # Add this run to the program's history
-    processes_data[program_name]["runs"].append(run_entry)
-    
-    # Save the updated data
-    try:
-        with open(processes_file, 'w') as f:
-            json.dump(processes_data, f, indent=2)
-        return run_id
-    except Exception as e:
-        # Don't fail the main program if logging fails
-        print(f"Warning: Could not create process log start: {e}")
-        return run_id
-
-
-def update_process_log_finish(build_path, program_name, run_id, end_time, status="completed"):
-    """
-    Update the processes_run.json file to mark the completion of a program execution.
-    This updates an existing log entry from "running" to the final status.
-    
-    Args:
-        build_path (str): Path to the build directory
-        program_name (str): Name of the program that was run
-        run_id (str): Unique run identifier from create_process_log_start
-        end_time (datetime): When the program finished
-        status (str): Status of the execution (completed, failed, etc.)
-    """
-    import json
-    from pathlib import Path
-    from datetime import datetime
-    
-    processes_file = Path(build_path) / "processes_run.json"
-    
-    # Load existing data
-    if not processes_file.exists():
-        print(f"Warning: Process log file not found: {processes_file}")
-        return False
-    
-    try:
-        with open(processes_file, 'r') as f:
-            processes_data = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        print(f"Warning: Could not read process log file: {processes_file}")
-        return False
-    
-    # Find and update the specific run entry
-    if program_name not in processes_data:
-        print(f"Warning: Program {program_name} not found in process log")
-        return False
-    
-    # Check if the program entry has the new "runs" structure
-    if "runs" not in processes_data[program_name]:
-        print(f"Warning: Program {program_name} has old structure without 'runs' array")
-        return False
-    
-    # Find the run entry with matching run_id
-    run_found = False
-    for run_entry in processes_data[program_name]["runs"]:
-        if run_entry.get("run_id") == run_id:
-            # Parse start time to calculate duration
-            try:
-                start_time_str = run_entry["start_time"]
-                start_time = datetime.fromisoformat(start_time_str)
-                duration_seconds = (end_time - start_time).total_seconds()
-            except Exception as e:
-                print(f"Warning: Could not calculate duration: {e}")
-                duration_seconds = None
-            
-            # Update the entry
-            run_entry["end_time"] = end_time.isoformat()
-            run_entry["duration_seconds"] = duration_seconds
-            run_entry["status"] = status
-            run_found = True
-            break
-    
-    if not run_found:
-        print(f"Warning: Run with ID {run_id} not found for program {program_name}")
-        return False
-    
-    # Save the updated data
-    try:
-        with open(processes_file, 'w') as f:
-            json.dump(processes_data, f, indent=2)
-        return True
-    except Exception as e:
-        print(f"Warning: Could not update process log finish: {e}")
-        return False
-
-
 def main():
     # Clear the terminal screen based on OS
     import platform
@@ -289,7 +121,7 @@ def main():
     print(f"Script directory: {script_dir}")
     print(f"Project root: {project_root}")
 
-    logger, log_queue, listener = setup_logging(project_root)
+ 
     
     # Get build ID from user
     build_id = input("Enter the build ID (e.g., 271360): ").strip()
@@ -299,8 +131,8 @@ def main():
     
     # Set up build path early so we can log the start
     main_build_folder = "/Users/ted.tedford/Documents/MIDAS"
-    build_path = os.path.join(main_build_folder, build_id)
-    os.makedirs(build_path, exist_ok=True)
+    build_path = setup_build_directory(build_id, main_build_folder)
+    logger, log_queue, listener = setup_logging(build_path)
     
     # Create process log entry to mark the start of execution using new function
     run_id = create_process_log_start(build_path, "clf_analysis", start_time)
@@ -376,33 +208,18 @@ def main():
         # Create output directory using MIDAS-style structure with build ID
         # build_path was already created earlier for logging
         
-        # Create clf_analysis subfolder
-        clf_analysis_path = os.path.join(build_path, "clf_analysis")
+        # Create the complete directory structure using utility function
+        directories = create_directory_structure(build_id, "/Users/ted.tedford/Documents/MIDAS", clear_existing=True)
         
-        # Clear existing clf_analysis folder if it exists and recreate it
-        if os.path.exists(clf_analysis_path):
-            import shutil
-            shutil.rmtree(clf_analysis_path)
-            print(f"Cleared existing clf_analysis folder: {clf_analysis_path}")
-        
-        os.makedirs(clf_analysis_path, exist_ok=True)
-        
-        # Create subdirectories within clf_analysis
-        layer_partials_dir = os.path.join(clf_analysis_path, "layer_partials")
-        composite_platforms_dir = os.path.join(clf_analysis_path, "composite_platforms")
-        identifier_views_dir = os.path.join(clf_analysis_path, "identifier_views")
-        clean_platforms_dir = os.path.join(clf_analysis_path, "clean_platforms")
-        
-        os.makedirs(layer_partials_dir, exist_ok=True)
-        os.makedirs(composite_platforms_dir, exist_ok=True)
-        os.makedirs(identifier_views_dir, exist_ok=True)
-        os.makedirs(clean_platforms_dir, exist_ok=True)
-        
-        output_dir = clf_analysis_path
-        
-        print(f"Created build directory: {build_path}")
-        print(f"Created clf_analysis directory: {clf_analysis_path}")
-        print(f"Created subdirectories: layer_partials, composite_platforms, identifier_views, clean_platforms")
+        # Extract paths for use in the rest of the script
+        # Note: build_path is already created above, so we get it from directories for consistency
+        clf_analysis_path = directories['clf_analysis']
+        output_dir = directories['output_dir']
+        layer_partials_dir = directories['layer_partials']
+        composite_platforms_dir = directories['composite_platforms']
+        identifier_views_dir = directories['identifier_views']
+        clean_platforms_dir = directories['clean_platforms']
+        holes_views_dir = directories['holes_views']
         
         logger.info(f"Created output directory at: {output_dir}")
         
@@ -651,8 +468,84 @@ def main():
                 "unique_identifiers": len(identifiers)
             }
             platform_info["file_identifier_summary"].append(summary_entry)
+
+        # Process all exclusion-related functionality
+        process_excluded_files_details(
+            draw_excluded, excluded_files_details, exclusion_patterns, 
+            excluded_shapes_by_identifier, output_dir, platform_info
+        )
+
+        # Print summary information
+        print_identifier_summary(platform_info["file_identifier_summary"], closed_paths_found)
         
-        # In main function, replace the platform view generation section with:
+        # Create composite platform views with original layer heights (conditional)
+        if create_composite_views:
+            print("\nGenerating platform composite views...")
+            for height in wanted_layer_heights:
+                try:
+                    print(f"Creating composite view at height {height}mm...")
+                    composite_file = create_platform_composite_with_folders(clf_files, output_dir, 
+                                                            height=height, 
+                                                            fill_closed=fill_closed,
+                                                            create_transparent_png=create_composite_transparent_pngs)
+                    platform_info["platform_composites"].append({
+                        "height": height,
+                        "filename": composite_file
+                    })
+                    print(f"Created platform composite at {height}mm: {composite_file}")
+                except Exception as e:
+                    print(f"Error creating composite at height {height}mm: {str(e)}")
+        else:
+            print("\nSkipping platform composite views (user selected no)")
+            platform_info["platform_composites"] = []
+
+        # Create clean platform views - process all heights for JSON but only create PNGs for selected heights
+        if save_clean:
+            print("\nGenerating clean platform views...")
+            # Get all heights for data processing
+            max_height = get_max_layer_height(clf_files)
+            all_heights = generate_full_layer_heights(max_height)
+            print(f"Processing all layers from 0.0500mm to {max_height}mm for JSON data")
+            print(f"Creating PNGs only for selected heights: {wanted_layer_heights}")
+            
+            # Process heights sequentially to avoid multiprocessing conflicts
+            print(f"Processing {len(all_heights)} heights sequentially...")
+            
+            for height in all_heights:
+                # Only create PNG for heights that are in wanted_layer_heights
+                should_create_png = height in wanted_layer_heights
+                try:
+                    print(f"Processing height {height}mm...")
+                    clean_file = create_clean_platform(
+                        clf_files, 
+                        output_dir,
+                        height=height,
+                        fill_closed=fill_closed,
+                        alignment_style_only=alignment_style_only,
+                        save_clean_png=should_create_png
+                    )
+                    
+                    if should_create_png and clean_file:
+                        platform_info["clean_platforms"].append({
+                            "height": height,
+                            "filename": clean_file
+                        })
+                        print(f"Created clean platform PNG at {height}mm: {clean_file}")
+                    elif should_create_png:
+                        print(f"No clean platform PNG file created for {height}mm")
+                    else:
+                        print(f"Processed data for {height}mm (no PNG created - not in selected heights)")
+                except Exception as e:
+                    print(f"Error creating clean platform at height {height}mm: {str(e)}")
+        
+        # =============================================================================
+        # PLATFORM VIEW GENERATION - All view generation happens after data collection
+        # =============================================================================
+        print("\n" + "="*80)
+        print("GENERATING PLATFORM VIEWS (using collected data)")
+        print("="*80)
+        
+        # Generate identifier and non-identifier platform views
         print("\nGenerating identifier and non-identifier platform views...")
         for identifier, shapes_data in shapes_by_identifier.items():
             try:
@@ -761,78 +654,7 @@ def main():
             }
             print(f"Created {len(successful_holes_views)} holes views with total of {total_holes_found} holes across all heights")
 
-        # Process all exclusion-related functionality
-        process_excluded_files_details(
-            draw_excluded, excluded_files_details, exclusion_patterns, 
-            excluded_shapes_by_identifier, output_dir, platform_info
-        )
-
-        # Print summary information
-        print_identifier_summary(platform_info["file_identifier_summary"], closed_paths_found)
-        
-        # Create composite platform views with original layer heights (conditional)
-        if create_composite_views:
-            print("\nGenerating platform composite views...")
-            for height in wanted_layer_heights:
-                try:
-                    print(f"Creating composite view at height {height}mm...")
-                    composite_file = create_platform_composite_with_folders(clf_files, output_dir, 
-                                                            height=height, 
-                                                            fill_closed=fill_closed,
-                                                            create_transparent_png=create_composite_transparent_pngs)
-                    platform_info["platform_composites"].append({
-                        "height": height,
-                        "filename": composite_file
-                    })
-                    print(f"Created platform composite at {height}mm: {composite_file}")
-                except Exception as e:
-                    print(f"Error creating composite at height {height}mm: {str(e)}")
-        else:
-            print("\nSkipping platform composite views (user selected no)")
-            platform_info["platform_composites"] = []
-
-        # Create clean platform views - process all heights for JSON but only create PNGs for selected heights
-        if save_clean:
-            print("\nGenerating clean platform views...")
-            # Get all heights for data processing
-            max_height = get_max_layer_height(clf_files)
-            all_heights = generate_full_layer_heights(max_height)
-            print(f"Processing all layers from 0.0500mm to {max_height}mm for JSON data")
-            print(f"Creating PNGs only for selected heights: {wanted_layer_heights}")
-            
-            # Process heights sequentially to avoid multiprocessing conflicts
-            print(f"Processing {len(all_heights)} heights sequentially...")
-            
-            for height in all_heights:
-                # Only create PNG for heights that are in wanted_layer_heights
-                should_create_png = height in wanted_layer_heights
-                try:
-                    print(f"Processing height {height}mm...")
-                    clean_file = create_clean_platform(
-                        clf_files, 
-                        output_dir,
-                        height=height,
-                        fill_closed=fill_closed,
-                        alignment_style_only=alignment_style_only,
-                        save_clean_png=should_create_png
-                    )
-                    
-                    if should_create_png and clean_file:
-                        platform_info["clean_platforms"].append({
-                            "height": height,
-                            "filename": clean_file
-                        })
-                        print(f"Created clean platform PNG at {height}mm: {clean_file}")
-                    elif should_create_png:
-                        print(f"No clean platform PNG file created for {height}mm")
-                    else:
-                        print(f"Processed data for {height}mm (no PNG created - not in selected heights)")
-                except Exception as e:
-                    print(f"Error creating clean platform at height {height}mm: {str(e)}")
-        
-        # Add closed paths information to final JSON
-        platform_info["closed_paths_summary"] = closed_paths_found
-        
+        # Create unclosed shapes view
         unclosed_view, unclosed_count = create_unclosed_shapes_view(shapes_by_identifier, output_dir)
         if unclosed_view:
             platform_info["unclosed_shapes_view"] = {
@@ -840,6 +662,13 @@ def main():
                 "total_shapes": unclosed_count
             }
             print(f"\nCreated unclosed shapes view with {unclosed_count} shapes")
+
+        print("\n" + "="*80)
+        print("PLATFORM VIEW GENERATION COMPLETE")
+        print("="*80)
+        
+        # Add closed paths information to final JSON
+        platform_info["closed_paths_summary"] = closed_paths_found
     
         # Prepare final JSON data
         json_identifier_info = {
