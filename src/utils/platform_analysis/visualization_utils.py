@@ -130,10 +130,11 @@ def create_combined_identifier_platform_view(shapes_by_identifier, output_dir):
         colors = plt.cm.tab10(np.linspace(0, 1, len(identifiers)))
         identifier_colors = dict(zip(identifiers, colors))
         
-        # Track statistics
+        # Track statistics and collect all points for bounding box
         total_shapes = 0
         min_height = float('inf')
         max_height = float('-inf')
+        all_points = []  # Collect all points for bounding box calculation
         
         # Plot each identifier with its assigned color
         for identifier, color in identifier_colors.items():
@@ -154,8 +155,15 @@ def create_combined_identifier_platform_view(shapes_by_identifier, output_dir):
                     if shape_info['type'] == 'point':
                         plt.plot(points[0, 0], points[0, 1], 'o', 
                                 color=color, markersize=2, alpha=0.7)
+                        # Add point to bounding box calculation
+                        all_points.extend([[points[0, 0], points[0, 1]]])
                     else:
                         draw_shape(plt, points, color)
+                        # Add all points to bounding box calculation
+                        if isinstance(points, np.ndarray):
+                            all_points.extend(points.tolist())
+                        else:
+                            all_points.extend(points)
                 elif shape_info['type'] == 'circle':
                     circle = plt.Circle(
                         shape_info['center'], 
@@ -165,11 +173,62 @@ def create_combined_identifier_platform_view(shapes_by_identifier, output_dir):
                         alpha=0.7
                     )
                     plt.gca().add_artist(circle)
+                    # Add circle bounding box to calculation
+                    center = shape_info['center']
+                    radius = shape_info['radius']
+                    all_points.extend([
+                        [center[0] - radius, center[1] - radius],
+                        [center[0] + radius, center[1] + radius]
+                    ])
         
-        plt.title(f'Combined Identifier Platform View\n'
-                 f'Total Identifiers: {len(identifiers)}\n'
-                 f'Total Shapes: {total_shapes}\n'
-                 f'Height Range: {min_height:.2f}mm to {max_height:.2f}mm')
+        # Calculate and draw bounding box
+        if all_points:
+            all_points = np.array(all_points)
+            bbox_min_x = np.min(all_points[:, 0])
+            bbox_max_x = np.max(all_points[:, 0])
+            bbox_min_y = np.min(all_points[:, 1])
+            bbox_max_y = np.max(all_points[:, 1])
+            
+            # Calculate dimensions
+            bbox_width = bbox_max_x - bbox_min_x
+            bbox_height = bbox_max_y - bbox_min_y
+            
+            # Draw bounding box rectangle
+            bbox_rect = plt.Rectangle((bbox_min_x, bbox_min_y), bbox_width, bbox_height,
+                                    linewidth=2, edgecolor='red', facecolor='none', 
+                                    linestyle='--', alpha=0.8)
+            plt.gca().add_patch(bbox_rect)
+            
+            # Add measurement text annotations
+            # Width annotation (bottom of bbox)
+            plt.annotate(f'Width: {bbox_width:.2f}mm', 
+                        xy=((bbox_min_x + bbox_max_x) / 2, bbox_min_y - 5),
+                        ha='center', va='top', fontsize=10, fontweight='bold',
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+            
+            # Height annotation (left of bbox)
+            plt.annotate(f'Height: {bbox_height:.2f}mm', 
+                        xy=(bbox_min_x - 5, (bbox_min_y + bbox_max_y) / 2),
+                        ha='right', va='center', fontsize=10, fontweight='bold', rotation=90,
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+            
+            # Corner coordinates annotation (top-right of bbox)
+            plt.annotate(f'Min: ({bbox_min_x:.1f}, {bbox_min_y:.1f})\nMax: ({bbox_max_x:.1f}, {bbox_max_y:.1f})', 
+                        xy=(bbox_max_x + 5, bbox_max_y),
+                        ha='left', va='top', fontsize=9,
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor='yellow', alpha=0.7))
+            
+            # Update title to include bounding box info
+            title_text = (f'Combined Identifier Platform View\n'
+                         f'Total Identifiers: {len(identifiers)} | Total Shapes: {total_shapes}\n'
+                         f'Height Range: {min_height:.2f}mm to {max_height:.2f}mm\n'
+                         f'Bounding Box: {bbox_width:.2f}mm × {bbox_height:.2f}mm')
+        else:
+            title_text = (f'Combined Identifier Platform View\n'
+                         f'Total Identifiers: {len(identifiers)} | Total Shapes: {total_shapes}\n'
+                         f'Height Range: {min_height:.2f}mm to {max_height:.2f}mm')
+        
+        plt.title(title_text)
         add_platform_labels(plt)
         set_platform_limits(plt)
         

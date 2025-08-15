@@ -23,8 +23,7 @@ from utils.myfuncs.file_utils import find_clf_files
 
 def analyze_shape_structure(clf_file_path, height=1.0):
     """Analyze the structure of shapes in a CLF file to identify holes"""
-    print(f"\n🔍 Analyzing shape structure in: {os.path.basename(clf_file_path)}")
-    print(f"📏 At height: {height}mm")
+    print(f"\n🔍 Analyzing shape structure in: {os.path.basename(clf_file_path)} at height: {height}mm")
     
     try:
         part = CLFFile(clf_file_path)
@@ -40,8 +39,6 @@ def analyze_shape_structure(clf_file_path, height=1.0):
             
         shapes_with_holes = []
         total_shapes = len(layer.shapes)
-        
-        print(f"📊 Found {total_shapes} shapes in layer")
         
         for i, shape in enumerate(layer.shapes):
             if hasattr(shape, 'points'):

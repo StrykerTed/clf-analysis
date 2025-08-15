@@ -121,8 +121,7 @@ def main():
     print(f"Script directory: {script_dir}")
     print(f"Project root: {project_root}")
 
- 
-    
+
     # Get build ID from user
     build_id = input("Enter the build ID (e.g., 271360): ").strip()
     if not build_id:
@@ -138,7 +137,7 @@ def main():
     run_id = create_process_log_start(build_path, "clf_analysis", start_time)
     logger.info(f"Started process logging with run_id: {run_id}")
     
-    abp_file = f"/Users/ted.tedford/Public/MyLocalRepos/clf_analysis_clean/abp_sourcefiles/preprocess build-{build_id}.abp"
+    abp_file = os.path.join(build_path, f"preprocess build-{build_id}.abp")
     
     # Check if the ABP file exists
     if not os.path.exists(abp_file):
