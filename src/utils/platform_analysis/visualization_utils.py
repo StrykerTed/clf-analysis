@@ -7,6 +7,9 @@ import numpy as np
 import json
 from matplotlib.patches import Polygon
 
+# Import platform configuration
+from config import PLATFORM_HALF_SIZE_MM, PLATFORM_SIZE_MM
+
 from utils.myfuncs.plotTools import (
     setup_platform_figure,
     setup_standard_platform_view,
@@ -440,8 +443,9 @@ def create_transparent_composite_folders(shapes, output_dir, height, fill_closed
         ax.patch.set_alpha(0)  # Make axes background transparent
         
         # Set platform limits
-        plt.xlim(-125, 125)
-        plt.ylim(-125, 125)
+        half_size = PLATFORM_HALF_SIZE_MM
+        plt.xlim(-half_size, half_size)
+        plt.ylim(-half_size, half_size)
         
         # Turn off all chart elements
         ax.set_xticks([])
@@ -720,8 +724,9 @@ def create_transparent_paths_view(shapes_by_identifier, output_dir):
         ax.patch.set_alpha(0)  # Make axes background transparent
         
         # Set platform limits
-        plt.xlim(-125, 125)
-        plt.ylim(-125, 125)
+        half_size = PLATFORM_HALF_SIZE_MM
+        plt.xlim(-half_size, half_size)
+        plt.ylim(-half_size, half_size)
         
         # Turn off all chart elements
         ax.set_xticks([])
@@ -763,8 +768,8 @@ def create_transparent_paths_view(shapes_by_identifier, output_dir):
         save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
         plt.close()
         
-        # ALSO create a 2500x2500 version
-        create_transparent_paths_view_2500px(shapes_by_identifier, output_dir)
+        # ALSO create a 2100x2100 version
+        create_transparent_paths_view_2100px(shapes_by_identifier, output_dir)
         
         print(f"Created transparent paths view at: {output_path}")
         return os.path.join("identifier_views", filename)
@@ -774,10 +779,10 @@ def create_transparent_paths_view(shapes_by_identifier, output_dir):
         return None
         
 
-def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
-    """Create a 2500x2500 transparent PNG with just the path data from all identifiers, without chart elements."""
+def create_transparent_paths_view_2100px(shapes_by_identifier, output_dir):
+    """Create a 2100x2100 transparent PNG with just the path data from all identifiers, without chart elements."""
     try:
-        print(f"\n=== DEBUGGING create_transparent_paths_view_2500px ===")
+        print(f"\n=== DEBUGGING create_transparent_paths_view_2100px ===")
         
         # Debug: Show all keys in shapes_by_identifier
         all_keys = list(shapes_by_identifier.keys())
@@ -811,16 +816,17 @@ def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
         identifier_colors = dict(zip(identifiers, colors))
         print(f"Generated colors for {len(identifiers)} identifiers")
         
-        # Create figure with transparent background - size adjusted for 2500px output
-        # 8.33 inches * 300 DPI = ~2500px
-        fig = plt.figure(figsize=(8.33, 8.33), facecolor="none")
+        # Create figure with transparent background - size adjusted for 2100px output  
+        # 7.0 inches * 300 DPI = 2100px (for 210mm platform)
+        fig = plt.figure(figsize=(7.0, 7.0), facecolor="none")
         ax = plt.gca()
         ax.set_position([0, 0, 1, 1])  # Remove all margins
         ax.patch.set_alpha(0)  # Make axes background transparent
         
-        # Set platform limits - still representing the same 250mm x 250mm area
-        plt.xlim(-125, 125)
-        plt.ylim(-125, 125)
+        # Set platform limits for 210mm x 210mm platform
+        half_size = PLATFORM_HALF_SIZE_MM
+        plt.xlim(-half_size, half_size)
+        plt.ylim(-half_size, half_size)
         
         # Turn off all chart elements
         ax.set_xticks([])
@@ -946,15 +952,15 @@ def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
         # Save the transparent plot
         identifier_dir = os.path.join(output_dir, "identifier_views")
         os.makedirs(identifier_dir, exist_ok=True)
-        filename = f'transparent_all_pathdata_250mmx250mm_2500px.png'
+        filename = f'transparent_all_pathdata_{PLATFORM_SIZE_MM}mmx{PLATFORM_SIZE_MM}mm_2100px.png'
         output_path = os.path.join(identifier_dir, filename)
         save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
         plt.close()
         
         # ALSO create version that includes 'no_identifier' shapes for comparison
-        create_transparent_paths_view_2500px_including_no_id(shapes_by_identifier, output_dir)
+        create_transparent_paths_view_2100px_including_no_id(shapes_by_identifier, output_dir)
         
-        print(f"Created 2500px transparent paths view at: {output_path}")
+        print(f"Created 2100px transparent paths view at: {output_path}")
         return os.path.join("identifier_views", filename)
         
     except Exception as e:
@@ -962,10 +968,10 @@ def create_transparent_paths_view_2500px(shapes_by_identifier, output_dir):
         return None
 
 
-def create_transparent_paths_view_2500px_including_no_id(shapes_by_identifier, output_dir):
-    """Create a 2500x2500 transparent PNG with path data from ALL shapes, including those without identifiers."""
+def create_transparent_paths_view_2100px_including_no_id(shapes_by_identifier, output_dir):
+    """Create a 2100x2100 transparent PNG with path data from ALL shapes, including those without identifiers."""
     try:
-        print(f"\n=== DEBUGGING create_transparent_paths_view_2500px_including_no_id ===")
+        print(f"\n=== DEBUGGING create_transparent_paths_view_2100px_including_no_id ===")
         
         # Get ALL keys including 'no_identifier'
         all_keys = list(shapes_by_identifier.keys())
@@ -989,15 +995,16 @@ def create_transparent_paths_view_2500px_including_no_id(shapes_by_identifier, o
         
         print(f"Generated colors for {len(identifiers)} identifiers")
         
-        # Create figure with transparent background - size adjusted for 2500px output
-        fig = plt.figure(figsize=(8.33, 8.33), facecolor="none")
+        # Create figure with transparent background - size adjusted for 2100px output  
+        fig = plt.figure(figsize=(7.0, 7.0), facecolor="none")
         ax = plt.gca()
         ax.set_position([0, 0, 1, 1])  # Remove all margins
         ax.patch.set_alpha(0)  # Make axes background transparent
         
-        # Set platform limits - still representing the same 250mm x 250mm area
-        plt.xlim(-125, 125)
-        plt.ylim(-125, 125)
+        # Set platform limits for 210mm x 210mm platform
+        half_size = PLATFORM_HALF_SIZE_MM
+        plt.xlim(-half_size, half_size)
+        plt.ylim(-half_size, half_size)
         
         # Turn off all chart elements
         ax.set_xticks([])
@@ -1099,16 +1106,16 @@ def create_transparent_paths_view_2500px_including_no_id(shapes_by_identifier, o
         # Save the transparent plot
         identifier_dir = os.path.join(output_dir, "identifier_views")
         os.makedirs(identifier_dir, exist_ok=True)
-        filename = f'transparent_all_pathdata_WITH_NO_ID_250mmx250mm_2500px.png'
+        filename = f'transparent_all_pathdata_WITH_NO_ID_{PLATFORM_SIZE_MM}mmx{PLATFORM_SIZE_MM}mm_2100px.png'
         output_path = os.path.join(identifier_dir, filename)
         save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
         plt.close()
         
-        print(f"Created 2500px transparent paths view (WITH NO_ID) at: {output_path}")
+        print(f"Created 2100px transparent paths view (WITH NO_ID) at: {output_path}")
         return os.path.join("identifier_views", filename)
         
     except Exception as e:
-        print(f"Error creating 2500px transparent paths view (WITH NO_ID): {str(e)}")
+        print(f"Error creating 2100px transparent paths view (WITH NO_ID): {str(e)}")
         return None
 
 
@@ -1152,8 +1159,9 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
         ax.set_position([0, 0, 1, 1])
         
         # Set exact limits for platform size
-        plt.xlim(-125, 125)
-        plt.ylim(-125, 125)
+        half_size = PLATFORM_HALF_SIZE_MM
+        plt.xlim(-half_size, half_size)
+        plt.ylim(-half_size, half_size)
         
         # Turn off all chart elements
         ax.set_xticks([])
@@ -1474,8 +1482,6 @@ def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
                     'holes': holes_in_file,
                     'can_have_holes': can_have_holes
                 })
-                
-                print(f"  - {clf_info['name']}: {exteriors_in_file} exteriors, {holes_in_file} holes (can_have_holes: {can_have_holes})")
                 
             except Exception as e:
                 print(f"Error processing {clf_info['name']} for holes: {e}")

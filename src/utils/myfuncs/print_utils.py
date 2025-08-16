@@ -2,6 +2,9 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
+
+# Import platform configuration
+from config import PLATFORM_HALF_SIZE_MM
 import os
 
 def add_platform_labels(plt):
@@ -30,8 +33,9 @@ def create_unclosed_shapes_view(shapes_by_identifier, output_dir):
         plt.figure(figsize=(15, 15))
         
         # Draw platform boundaries
-        plt.plot([-125, 125, 125, -125, -125], 
-                [-125, -125, 125, 125, -125], 
+        half_size = PLATFORM_HALF_SIZE_MM
+        plt.plot([-half_size, half_size, half_size, -half_size, -half_size], 
+                [-half_size, -half_size, half_size, half_size, -half_size], 
                 'k--', alpha=0.5, label='Platform boundary')
         
         # Reference lines
@@ -64,8 +68,10 @@ def create_unclosed_shapes_view(shapes_by_identifier, output_dir):
         add_platform_labels(plt)
         plt.axis('equal')
         
-        plt.xlim(-130, 130)
-        plt.ylim(-130, 130)
+        # Set platform limits with small margin
+        limit = PLATFORM_HALF_SIZE_MM + 5
+        plt.xlim(-limit, limit)
+        plt.ylim(-limit, limit)
         
         filename = 'unclosed_shapes_platform_view.png'
         output_path = os.path.join(output_dir, filename)

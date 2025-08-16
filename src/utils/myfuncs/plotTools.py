@@ -6,14 +6,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Polygon
 
+# Import platform configuration
+from config import PLATFORM_HALF_SIZE_MM
+
 def setup_platform_figure(figsize=(15, 15)):
     """Creates and returns a new figure with standard size for platform plots"""
     return plt.figure(figsize=figsize)
 
 def draw_platform_boundary(plt, alpha=0.5, label='Platform boundary', linestyle='--', color='k'):
-    """Draws the standard 250mm x 250mm platform boundary"""
-    return plt.plot([-125, 125, 125, -125, -125], 
-                    [-125, -125, 125, 125, -125], 
+    """Draws the platform boundary using configured platform size"""
+    half_size = PLATFORM_HALF_SIZE_MM
+    return plt.plot([-half_size, half_size, half_size, -half_size, -half_size], 
+                    [-half_size, -half_size, half_size, half_size, -half_size], 
                     f'{color}{linestyle}', alpha=alpha, label=label)
 
 def add_reference_lines(plt, alpha=0.3, grid_alpha=0.2):
@@ -25,7 +29,7 @@ def add_reference_lines(plt, alpha=0.3, grid_alpha=0.2):
 def set_platform_limits(plt, margin=5):
     """Sets the standard axis limits for platform plots with optional margin"""
     # Set the limit value with margin
-    limit = 125 + margin
+    limit = PLATFORM_HALF_SIZE_MM + margin
     
     # Set equal aspect ratio first (this is more important for visualization correctness)
     plt.gca().set_aspect('equal', adjustable='box')
@@ -43,8 +47,9 @@ def setup_clean_platform_figure(figsize=(15, 15)):
     ax.set_position([0, 0, 1, 1])
     
     # Set exact limits for platform size
-    plt.xlim(-125, 125)
-    plt.ylim(-125, 125)
+    half_size = PLATFORM_HALF_SIZE_MM
+    plt.xlim(-half_size, half_size)
+    plt.ylim(-half_size, half_size)
     
     # Turn off all chart elements
     ax.set_xticks([])
