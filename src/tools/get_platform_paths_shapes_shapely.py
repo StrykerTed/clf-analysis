@@ -23,7 +23,6 @@ from utils.platform_analysis.file_handlers import (
 )
 
 from utils.myfuncs.file_utils import (
-    create_output_folder,
     find_clf_files,
     load_exclusion_patterns,
     should_skip_folder

@@ -1,0 +1,39 @@
+version: "3.8"
+
+name: defect-detector-services
+
+services:
+  database-python-handler:
+    build: .
+    container_name: database-python-handler
+    ports:
+      - "6100:6100"
+    environment:
+      # Database Configuration - connect to existing mssql container
+      DB_SERVER: mssql,1433
+      DB_USERNAME: sa
+      DB_PASSWORD: S3cure!P@ssw0rd_2025#Db
+      DB_DATABASE: scanalyserdatabase
+      DB_DRIVER: ODBC Driver 18 for SQL Server
+      # Flask Configuration
+      FLASK_ENV: development
+      FLASK_DEBUG: "True"
+      SECRET_KEY: your-secret-key-here-change-in-production
+      # MIDAS_BASE_PATH removed - let config.py handle platform detection
+    volumes:
+      - .:/app
+      - /app/venv # Exclude venv from volume mount
+      # MIDAS data volume mount
+      # For macOS - mount your local MIDAS directory
+      # For Windows - change to: "C:/public/shared/DefectDetectorBuilds:/midas_data:ro"
+      - "/Users/ted.tedford/Documents/MIDAS:/Users/ted.tedford/Documents/MIDAS:ro"
+    networks:
+      - defectdetect-database_default
+    restart: unless-stopped
+    # Don't create mssql dependency since it's external
+    external_links:
+      - mssql:mssql
+
+networks:
+  defectdetect-database_default:
+    external: true
