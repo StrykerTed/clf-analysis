@@ -21,6 +21,7 @@
 This service joins the `defect-detector-services` stack. Each service (defect-detect-fe, database-python-handler, clf-abp-path-analysis) has its own repository with its own `docker-compose.yml`, but they all use the same stack name and shared network, which allows Docker Compose to combine them automatically.
 
 **Stack Services:**
+
 - Port 6100: database-python-handler (separate repo)
 - Port 6200: defect-detect-fe (separate repo)
 - Port 6300: clf-abp-path-analysis (this repo)
@@ -197,7 +198,7 @@ Once running, the service is part of the `defect-detector-services` stack:
 | Service                 | Port | Status      |
 | ----------------------- | ---- | ----------- |
 | database-python-handler | 6100 | ✅ Existing |
-| clf-abp-path-analysis        | 6300 | ✅ **NEW**  |
+| clf-abp-path-analysis   | 6300 | ✅ **NEW**  |
 
 Both services share the `defectdetect-database_default` network.
 

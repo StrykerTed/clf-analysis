@@ -3,6 +3,7 @@
 ## ⚡ Important: Async Processing
 
 The API uses **asynchronous processing**:
+
 1. POST request returns immediately with a `job_id` (HTTP 202)
 2. Analysis runs in the background
 3. Check status using GET `/api/jobs/{job_id}`
@@ -32,6 +33,7 @@ curl -X POST http://localhost:6300/api/builds/271360/analyze \
 ```
 
 **Response (Immediate - HTTP 202):**
+
 ```json
 {
   "status": "accepted",
@@ -43,11 +45,13 @@ curl -X POST http://localhost:6300/api/builds/271360/analyze \
 ```
 
 **Then check status:**
+
 ```bash
 curl http://localhost:6300/api/jobs/1af4b0c8-3daf-49f5-9773-7f8718265476
 ```
 
 **With optional parameters:**
+
 ```bash
 curl -X POST http://localhost:6300/api/builds/271360/analyze \
   -H "Content-Type: application/json" \
@@ -71,15 +75,16 @@ curl -X POST http://localhost:6300/api/analyze \
 
 ## Parameters
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `build_id` | string | ✅ Yes | - | The build ID to analyze (e.g., "271360", "271726") |
-| `holes_interval` | number | No | 10 | Interval in mm for creating holes views |
-| `create_composite_views` | boolean | No | false | Whether to create composite platform views |
+| Parameter                | Type    | Required | Default | Description                                        |
+| ------------------------ | ------- | -------- | ------- | -------------------------------------------------- |
+| `build_id`               | string  | ✅ Yes   | -       | The build ID to analyze (e.g., "271360", "271726") |
+| `holes_interval`         | number  | No       | 10      | Interval in mm for creating holes views            |
+| `create_composite_views` | boolean | No       | false   | Whether to create composite platform views         |
 
 ## Example Calls
 
 ### Minimal - Just analyze a build
+
 ```bash
 curl -X POST http://localhost:6300/api/builds/271360/analyze \
   -H "Content-Type: application/json" \
@@ -87,6 +92,7 @@ curl -X POST http://localhost:6300/api/builds/271360/analyze \
 ```
 
 ### With holes interval
+
 ```bash
 curl -X POST http://localhost:6300/api/builds/271726/analyze \
   -H "Content-Type: application/json" \
@@ -94,6 +100,7 @@ curl -X POST http://localhost:6300/api/builds/271726/analyze \
 ```
 
 ### Full parameters
+
 ```bash
 curl -X POST http://localhost:6300/api/builds/271979/analyze \
   -H "Content-Type: application/json" \
@@ -106,6 +113,7 @@ curl -X POST http://localhost:6300/api/builds/271979/analyze \
 ## Response Format
 
 ### Success Response
+
 ```json
 {
   "status": "success",
@@ -122,6 +130,7 @@ curl -X POST http://localhost:6300/api/builds/271979/analyze \
 ```
 
 ### Error Response
+
 ```json
 {
   "status": "error",
@@ -132,11 +141,13 @@ curl -X POST http://localhost:6300/api/builds/271979/analyze \
 ## Output Location
 
 Results are saved to:
+
 ```
 /Users/ted.tedford/Documents/MIDAS/{build_id}/clf_analysis/
 ```
 
 For example, for build 271360:
+
 ```
 /Users/ted.tedford/Documents/MIDAS/271360/
 └── clf_analysis/
@@ -183,29 +194,29 @@ else:
 
 ```javascript
 // Simple analysis
-fetch('http://localhost:6300/api/builds/271360/analyze', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({})
+fetch("http://localhost:6300/api/builds/271360/analyze", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({}),
 })
-  .then(res => res.json())
-  .then(data => console.log(data));
+  .then((res) => res.json())
+  .then((data) => console.log(data));
 
 // With parameters
-fetch('http://localhost:6300/api/builds/271726/analyze', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+fetch("http://localhost:6300/api/builds/271726/analyze", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     holes_interval: 15,
-    create_composite_views: true
-  })
+    create_composite_views: true,
+  }),
 })
-  .then(res => res.json())
-  .then(data => {
-    if (data.status === 'success') {
-      console.log('Analysis completed:', data.result);
+  .then((res) => res.json())
+  .then((data) => {
+    if (data.status === "success") {
+      console.log("Analysis completed:", data.result);
     } else {
-      console.error('Error:', data.message);
+      console.error("Error:", data.message);
     }
   });
 ```
@@ -219,6 +230,7 @@ curl http://localhost:6300/health
 ```
 
 Response:
+
 ```json
 {
   "status": "healthy",
@@ -254,6 +266,7 @@ docker-compose up -d
 ## Troubleshooting
 
 ### Build not found
+
 ```bash
 # Check if build folder exists
 ls -la /Users/ted.tedford/Documents/MIDAS/271360/
@@ -263,6 +276,7 @@ ls -la /Users/ted.tedford/Documents/MIDAS/271360/*.abp
 ```
 
 ### Service not responding
+
 ```bash
 # Check if container is running
 docker ps | grep clf-abp-path-analysis
@@ -275,6 +289,7 @@ docker-compose restart
 ```
 
 ### Permission errors
+
 ```bash
 # Verify MIDAS directory permissions
 ls -la /Users/ted.tedford/Documents/MIDAS/

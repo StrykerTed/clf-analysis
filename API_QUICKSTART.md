@@ -48,6 +48,7 @@ docker-compose up -d --build
 ## 🏗️ Architecture
 
 Part of `defect-detector-services` stack:
+
 - Port 6100: database-python-handler
 - Port 6200: defect-detect-fe
 - Port 6300: clf-abp-path-analysis (this service)

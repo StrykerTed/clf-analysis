@@ -3,11 +3,13 @@
 ## 🎯 New Async Workflow
 
 The API now uses **asynchronous processing**. When you trigger an analysis:
+
 1. You get an **immediate response** with a `job_id`
 2. The analysis runs in the **background**
 3. You **check the status** using the `job_id`
 
 This allows the frontend to:
+
 - Know the analysis was successfully triggered
 - Not wait for the long-running process
 - Check status and get results when ready
@@ -27,6 +29,7 @@ This allows the frontend to:
 ### 1. Trigger Analysis (Returns Immediately)
 
 **Method 1: Build ID in URL (Recommended)**
+
 ```bash
 curl -X POST http://localhost:6300/api/builds/271360/analyze \
   -H "Content-Type: application/json" \
@@ -34,6 +37,7 @@ curl -X POST http://localhost:6300/api/builds/271360/analyze \
 ```
 
 **Method 2: Build ID in JSON Body**
+
 ```bash
 curl -X POST http://localhost:6300/api/analyze \
   -H "Content-Type: application/json" \
@@ -45,6 +49,7 @@ curl -X POST http://localhost:6300/api/analyze \
 ```
 
 **Response (HTTP 202 Accepted):**
+
 ```json
 {
   "status": "accepted",
@@ -62,11 +67,13 @@ curl http://localhost:6300/api/jobs/{job_id}
 ```
 
 **Example:**
+
 ```bash
 curl http://localhost:6300/api/jobs/1af4b0c8-3daf-49f5-9773-7f8718265476
 ```
 
 **Response (Queued):**
+
 ```json
 {
   "status": "success",
@@ -82,6 +89,7 @@ curl http://localhost:6300/api/jobs/1af4b0c8-3daf-49f5-9773-7f8718265476
 ```
 
 **Response (Running):**
+
 ```json
 {
   "status": "success",
@@ -97,6 +105,7 @@ curl http://localhost:6300/api/jobs/1af4b0c8-3daf-49f5-9773-7f8718265476
 ```
 
 **Response (Completed):**
+
 ```json
 {
   "status": "success",
@@ -119,6 +128,7 @@ curl http://localhost:6300/api/jobs/1af4b0c8-3daf-49f5-9773-7f8718265476
 ```
 
 **Response (Failed):**
+
 ```json
 {
   "status": "success",
@@ -139,6 +149,7 @@ curl http://localhost:6300/api/jobs
 ```
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -174,31 +185,36 @@ curl http://localhost:6300/health
 
 ```javascript
 // 1. Trigger analysis
-const triggerResponse = await fetch('http://localhost:6300/api/builds/271360/analyze', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ holes_interval: 10 })
-});
+const triggerResponse = await fetch(
+  "http://localhost:6300/api/builds/271360/analyze",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ holes_interval: 10 }),
+  }
+);
 
 const { job_id, status } = await triggerResponse.json();
 
-if (status === 'accepted') {
-  console.log('Analysis started!', job_id);
-  
+if (status === "accepted") {
+  console.log("Analysis started!", job_id);
+
   // 2. Poll for status (every 5 seconds)
   const intervalId = setInterval(async () => {
-    const statusResponse = await fetch(`http://localhost:6300/api/jobs/${job_id}`);
+    const statusResponse = await fetch(
+      `http://localhost:6300/api/jobs/${job_id}`
+    );
     const { job } = await statusResponse.json();
-    
-    console.log('Status:', job.status);
-    
-    if (job.status === 'completed') {
+
+    console.log("Status:", job.status);
+
+    if (job.status === "completed") {
       clearInterval(intervalId);
-      console.log('Analysis complete!', job.result);
+      console.log("Analysis complete!", job.result);
       // Update UI with results
-    } else if (job.status === 'failed') {
+    } else if (job.status === "failed") {
       clearInterval(intervalId);
-      console.error('Analysis failed:', job.error);
+      console.error("Analysis failed:", job.error);
       // Show error to user
     }
   }, 5000); // Poll every 5 seconds
@@ -226,9 +242,9 @@ print(f"Analysis started: {job_id}")
 while True:
     status_response = requests.get(f'http://localhost:6300/api/jobs/{job_id}')
     job_data = status_response.json()['job']
-    
+
     print(f"Status: {job_data['status']}")
-    
+
     if job_data['status'] == 'completed':
         print("Analysis complete!")
         print(f"Output: {job_data['result']['output_dir']}")
@@ -236,7 +252,7 @@ while True:
     elif job_data['status'] == 'failed':
         print(f"Analysis failed: {job_data['error']}")
         break
-    
+
     time.sleep(5)  # Wait 5 seconds before checking again
 ```
 
@@ -244,22 +260,22 @@ while True:
 
 ## 📊 Job Status States
 
-| Status | Description |
-|--------|-------------|
-| `queued` | Job created, waiting to start |
-| `running` | Analysis is currently running |
+| Status      | Description                    |
+| ----------- | ------------------------------ |
+| `queued`    | Job created, waiting to start  |
+| `running`   | Analysis is currently running  |
 | `completed` | Analysis finished successfully |
-| `failed` | Analysis encountered an error |
+| `failed`    | Analysis encountered an error  |
 
 ---
 
 ## 🎯 Parameters
 
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `build_id` | ✅ Yes | - | Build ID (e.g., "271360") |
-| `holes_interval` | No | 10 | Interval in mm for holes views |
-| `create_composite_views` | No | false | Create composite platform views |
+| Parameter                | Required | Default | Description                     |
+| ------------------------ | -------- | ------- | ------------------------------- |
+| `build_id`               | ✅ Yes   | -       | Build ID (e.g., "271360")       |
+| `holes_interval`         | No       | 10      | Interval in mm for holes views  |
+| `create_composite_views` | No       | false   | Create composite platform views |
 
 ---
 
@@ -272,6 +288,7 @@ Results saved to: `/Users/ted.tedford/Documents/MIDAS/{build_id}/clf_analysis/`
 ## 🌐 CORS Configuration
 
 The API is configured to accept requests from:
+
 - `http://localhost:6200` (defect-detect-fe)
 - `http://127.0.0.1:6200`
 - `http://defect-detect-fe:6200` (Docker network)
@@ -281,6 +298,7 @@ The API is configured to accept requests from:
 ## 🧪 Testing
 
 ### Quick Test
+
 ```bash
 # 1. Trigger
 curl -X POST http://localhost:6300/api/builds/271360/analyze \
@@ -294,6 +312,7 @@ curl http://localhost:6300/api/jobs/{job_id}
 ```
 
 ### Test from Frontend
+
 ```bash
 # From defect-detect-fe, this should work without CORS errors:
 fetch('http://localhost:6300/api/builds/271360/analyze', {
@@ -330,6 +349,7 @@ fetch('http://localhost:6300/api/builds/271360/analyze', {
 ## 🐛 Troubleshooting
 
 ### Job stays in "queued" forever
+
 ```bash
 # Check logs
 docker-compose logs -f
@@ -338,12 +358,14 @@ docker-compose logs -f
 ```
 
 ### Job not found
+
 ```bash
 # Job IDs are stored in memory - they're lost if container restarts
 # Store job_id in your database if you need persistence
 ```
 
 ### CORS errors from frontend
+
 ```bash
 # Verify the frontend is on port 6200
 # Check browser console for the exact origin

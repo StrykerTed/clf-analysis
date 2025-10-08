@@ -79,8 +79,9 @@ curl -X POST http://localhost:6300/api/analyze \
 ```
 
 **Parameters:**
+
 - `build_id` (required): Build ID to analyze (e.g., "271360")
-- `holes_interval` (optional, default 10): Interval in mm for holes views  
+- `holes_interval` (optional, default 10): Interval in mm for holes views
 - `create_composite_views` (optional, default false): Create composite platform views
 
 **Output Location:** Results saved to `/Users/ted.tedford/Documents/MIDAS/{build_id}/clf_analysis/`

@@ -56,7 +56,7 @@ curl http://localhost:6300/health
 **Architecture Note:** This service is part of the `defect-detector-services` stack. Each service has its own repository with its own `docker-compose.yml`, but they all use the same stack name and network, allowing them to work together:
 
 - **defect-detect-fe** (port 6200) - React frontend
-- **database-python-handler** (port 6100) - Database API  
+- **database-python-handler** (port 6100) - Database API
 - **clf-abp-path-analysis** (port 6300) - CLF Analysis API (this service)
 - **mssql** - SQL Server (external network)
 
@@ -509,7 +509,7 @@ This service is part of the `defect-detector-services` stack:
 
 - **mssql**: SQL Server database (external network)
 - **database-python-handler**: Database API (port 6100) - in separate repo
-- **defect-detect-fe**: React Frontend (port 6200) - in separate repo  
+- **defect-detect-fe**: React Frontend (port 6200) - in separate repo
 - **clf-abp-path-analysis**: CLF Analysis API (port 6300) - **this service**
 
 All services share the `defectdetect-database_default` network and combine into a single Docker Compose stack despite being in separate repositories.
