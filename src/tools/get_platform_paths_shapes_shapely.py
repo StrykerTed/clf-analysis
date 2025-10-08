@@ -97,7 +97,18 @@ def process_height(args):
         return {"height": height, "error": str(e), "success": False}
 
 
-def main():
+def run_analysis(build_id=None, holes_interval=10, create_composite_views=False):
+    """
+    Run the platform paths analysis with the given parameters.
+    
+    Args:
+        build_id (str): The build ID to process (e.g., '271360')
+        holes_interval (float): Interval for creating holes view (default: 10mm)
+        create_composite_views (bool): Whether to create composite platform views (default: False)
+    
+    Returns:
+        dict: Analysis results and status
+    """
     # Clear the terminal screen based on OS
     import platform
     import os
@@ -120,12 +131,13 @@ def main():
     print(f"Script directory: {script_dir}")
     print(f"Project root: {project_root}")
 
-
-    # Get build ID from user
-    build_id = input("Enter the build ID (e.g., 271360): ").strip()
+    # Validate build_id parameter
     if not build_id:
-        print("Build ID is required. Exiting.")
-        return
+        raise ValueError("Build ID is required")
+    
+    print(f"Processing build ID: {build_id}")
+    print(f"Holes interval: {holes_interval}mm")
+    print(f"Create composite views: {create_composite_views}")
     
     # Set up build path early so we can log the start
     main_build_folder = "/Users/ted.tedford/Documents/MIDAS"
@@ -140,12 +152,17 @@ def main():
     
     # Check if the ABP file exists
     if not os.path.exists(abp_file):
-        print(f"ABP file not found: {abp_file}")
+        error_msg = f"ABP file not found: {abp_file}"
+        print(error_msg)
         print("Please check the build ID and ensure the file exists.")
         # Log the failure and stop
         end_time = datetime.now()
         update_process_log_finish(build_path, "clf_analysis", run_id, end_time, "failed")
-        return
+        return {
+            "success": False,
+            "error": error_msg,
+            "build_id": build_id
+        }
 
     logger.info(f"Processing ABP file: {abp_file}")
     
@@ -163,20 +180,13 @@ def main():
         alignment_style_only = False
         draw_excluded = False  # Temporarily disable to avoid blocking multiprocessing
         
-        # Get holes view interval from user at startup
-        holes_interval = input("Create Holes View for every x mm (default 10): ").strip()
-        if not holes_interval:
+        # Use parameter values instead of user input
+        # Validate and set holes_interval
+        try:
+            holes_interval = float(holes_interval)
+        except (ValueError, TypeError):
+            print(f"Invalid holes_interval '{holes_interval}', using default 10mm")
             holes_interval = 10
-        else:
-            try:
-                holes_interval = float(holes_interval)
-            except ValueError:
-                print("Invalid input, using default 10mm")
-                holes_interval = 10
-        
-        # Get composite platform views preference from user
-        composite_views_input = input("Create composite platform views? yes/no (default no): ").strip().lower()
-        create_composite_views = composite_views_input in ['yes', 'y', '1', 'true']
         
         # Control variables for PNG creation
         create_composite_transparent_pngs = False  # Set to True to enable transparent composite PNG creation
@@ -702,6 +712,17 @@ def main():
             logger.info(f"Updated process log: {os.path.join(build_path, 'processes_run.json')}")
         except Exception as e:
             logger.warning(f"Could not update process log: {e}")
+        
+        # Return success result
+        return {
+            "success": True,
+            "build_id": build_id,
+            "duration_seconds": (end_time - start_time).total_seconds(),
+            "summary_path": summary_path,
+            "output_dir": output_dir,
+            "holes_interval": holes_interval,
+            "create_composite_views": create_composite_views
+        }
             
     except Exception as e:
         logger.error(f"Error in main execution: {str(e)}", exc_info=True)
@@ -712,10 +733,64 @@ def main():
             update_process_log_finish(build_path, "clf_analysis", run_id, end_time, "failed")
         else:
             print(f"Could not log process failure - build_path or run_id not available: {str(e)}")
+        
+        # Return error result
+        return {
+            "success": False,
+            "error": str(e),
+            "build_id": build_id if 'build_id' in locals() else None
+        }
     finally:
         # Clean up the logging listener
-        logger.info("Shutting down logging listener")
-        listener.stop()
+        if 'listener' in locals():
+            logger.info("Shutting down logging listener")
+            listener.stop()
+
+
+def main():
+    """
+    Interactive main function for command-line usage.
+    Prompts user for input and calls run_analysis with the provided parameters.
+    """
+    try:
+        # Get build ID from user
+        build_id = input("Enter the build ID (e.g., 271360): ").strip()
+        if not build_id:
+            print("Build ID is required. Exiting.")
+            return
+        
+        # Get holes view interval from user
+        holes_interval_input = input("Create Holes View for every x mm (default 10): ").strip()
+        if not holes_interval_input:
+            holes_interval = 10
+        else:
+            try:
+                holes_interval = float(holes_interval_input)
+            except ValueError:
+                print("Invalid input, using default 10mm")
+                holes_interval = 10
+        
+        # Get composite platform views preference from user
+        composite_views_input = input("Create composite platform views? yes/no (default no): ").strip().lower()
+        create_composite_views = composite_views_input in ['yes', 'y', '1', 'true']
+        
+        # Run the analysis
+        result = run_analysis(build_id, holes_interval, create_composite_views)
+        
+        # Print results
+        if result["success"]:
+            print(f"\nAnalysis completed successfully!")
+            print(f"Duration: {result['duration_seconds']:.2f} seconds")
+            print(f"Output directory: {result['output_dir']}")
+            print(f"Summary saved to: {result['summary_path']}")
+        else:
+            print(f"\nAnalysis failed: {result['error']}")
+            
+    except KeyboardInterrupt:
+        print("\nAnalysis interrupted by user.")
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
+
 
 if __name__ == "__main__":
     main()

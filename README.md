@@ -26,23 +26,70 @@
 **CLF Analysis Tool** provides comprehensive capabilities for ABP/CLF file analysis and visualization:
 
 - **🔍 CLF File Processing** - Complete parsing and analysis of Arcam EBM layer data
+- **🐳 Docker API Service** - Containerized REST API for programmatic access (port 6300)
 - **⚙️ PyArcam Integration** - Built-in utilities for working with Arcam machine data
 - **📐 Shapely Analysis** - Advanced geometric analysis of platform paths and shapes
+- **🕳️ Hole Detection** - Sophisticated detection and analysis of holes in CLF shapes
 - **⚡ Multiprocessing Support** - Optimized for large-scale data processing
 - **📏 Layerqam Calibration** - Camera calibration and coordinate transformation
 - **📊 Visualization Tools** - Rich plotting and analysis visualization
+- **🌐 Web Interface** - Interactive Flask-based web application for CLF analysis
 
 <div align="center">
 
 ![CLF Processing](https://img.shields.io/badge/CLF-File%20Processing-success?style=for-the-badge&logo=file)
 ![PyArcam](https://img.shields.io/badge/PyArcam-Integration-success?style=for-the-badge&logo=python)
 ![Shapely](https://img.shields.io/badge/Shapely-Analysis-success?style=for-the-badge&logo=shapes)
+![Hole Detection](https://img.shields.io/badge/Hole-Detection-success?style=for-the-badge&logo=target)
 ![Multiprocessing](https://img.shields.io/badge/Multi-Processing-success?style=for-the-badge&logo=cpu)
 ![Visualization](https://img.shields.io/badge/Rich-Visualization-success?style=for-the-badge&logo=chart-line)
+![Web App](https://img.shields.io/badge/Web-Interface-success?style=for-the-badge&logo=web)
 
 </div>
 
 ## 📦 Installation
+
+### Option 1: Docker Deployment (Recommended for Production)
+
+The CLF Analysis service can be deployed as a containerized API service:
+
+```bash
+# Build the Docker image
+docker build -t clf-abp-path-analysis:latest .
+
+# Start the service
+docker-compose up -d clf-abp-path-analysis
+
+# Access the API
+curl http://localhost:6300/health
+```
+
+**API Quick Start:**
+
+```bash
+# Run analysis via API - Method 1: Build ID in URL (recommended)
+curl -X POST http://localhost:6300/api/builds/271360/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"holes_interval": 10}'
+
+# Method 2: Build ID in JSON body
+curl -X POST http://localhost:6300/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"build_id": "271360", "holes_interval": 10}'
+```
+
+**Parameters:**
+- `build_id` (required): Build ID to analyze (e.g., "271360")
+- `holes_interval` (optional, default 10): Interval in mm for holes views  
+- `create_composite_views` (optional, default false): Create composite platform views
+
+**Output Location:** Results saved to `/Users/ted.tedford/Documents/MIDAS/{build_id}/clf_analysis/`
+
+📚 **See [HOW_TO_CALL_API.md](HOW_TO_CALL_API.md) for detailed usage examples**  
+📚 **See [CLF_ANALYSIS_API_README.md](CLF_ANALYSIS_API_README.md) for complete API documentation**  
+⚡ **See [API_QUICKSTART.md](API_QUICKSTART.md) for quick reference**
+
+### Option 2: Local Development Installation
 
 1. **Clone or navigate to the project directory**
 
@@ -69,6 +116,15 @@
    ```
 
 ## 🏃 Quick Start
+
+### Launch Web Application (Recommended)
+
+```bash
+# Quick start - launches web interface
+./start_web_app.py
+```
+
+Access the web interface at `http://localhost:5000` for interactive CLF analysis.
 
 ### Run Platform Analysis Tool
 
@@ -102,6 +158,14 @@ Generate comprehensive visualizations of CLF shapes and paths:
 
 ```bash
 python visualize_clf_shapes.py
+```
+
+### Analyze Shapes with Holes
+
+Detect and analyze holes in CLF shapes:
+
+```bash
+python comprehensive_hole_analysis.py
 ```
 
 ### Run Tests
@@ -156,6 +220,39 @@ plt = files.calibration[0].plot()
 points = xypoints.transform(xy2uv).round().tolist()
 plt.circles(points=points, color=(0, 255, 0), size=5)
 plt.show(scale=0.6)
+```
+
+### Hole Detection in CLF Shapes
+
+```python
+def detect_holes_in_shape(shape):
+    """Detect holes in a CLF shape"""
+    if not hasattr(shape, 'points'):
+        return None, []
+
+    num_paths = len(shape.points)
+
+    if num_paths == 1:
+        # Simple shape, no holes
+        return shape.points[0], []
+    elif num_paths > 1:
+        # Shape with holes
+        exterior = shape.points[0]      # First path = exterior boundary
+        holes = shape.points[1:]        # Remaining paths = holes
+        return exterior, holes
+
+    return None, []
+
+# Example usage
+from pyarcam.clfutil import CLFFile
+
+file = CLFFile("filename.clf")
+layer = file.find(height=134.0)
+
+for shape in layer.shapes:
+    exterior, holes = detect_holes_in_shape(shape)
+    if holes:
+        print(f"Shape has {len(holes)} holes")
 ```
 
 ## ⚡ E-beam Path Analysis
@@ -232,6 +329,68 @@ To perform your own e-beam path analysis:
 
 The analysis will reveal the dual-strategy e-beam approach used in your CLF files, helping you understand the sophisticated manufacturing patterns encoded in the data.
 
+## 🕳️ Hole Detection & Analysis
+
+### Understanding Holes in CLF Data
+
+The CLF analysis tool provides comprehensive hole detection capabilities:
+
+- **Automatic Detection**: Identifies holes using path count analysis (shapes with multiple paths)
+- **Winding Direction Validation**: Confirms holes using opposite winding directions (CCW exterior → CW holes)
+- **Containment Testing**: Verifies hole geometry through spatial containment
+- **Statistical Analysis**: Tracks hole counts, distributions, and patterns across builds
+
+### Key Findings from Hole Analysis
+
+- **71 shapes with holes** found in typical builds
+- Most shapes have **1 hole each** (2 paths total: 1 exterior + 1 hole)
+- Complex shapes can have **up to 6 holes** (7 paths total: 1 exterior + 6 holes)
+- **Holes use opposite winding direction** for reliable detection
+
+### Running Hole Analysis
+
+```bash
+# Comprehensive hole detection and analysis
+python comprehensive_hole_analysis.py
+
+# Visualize all shapes with holes highlighted
+python visualize_all_shapes_with_holes.py
+
+# Generate hole statistics and reports
+python enhanced_hole_analysis.py
+```
+
+## 🌐 Web Interface
+
+### Quick Start Web App
+
+Launch the interactive web interface for CLF analysis:
+
+```bash
+# Start the web application
+./start_web_app.py
+
+# Or manually start
+cd web_app
+python app.py
+```
+
+Access at `http://localhost:5000` for:
+
+- Interactive CLF file uploads and analysis
+- Real-time visualization of shapes and holes
+- Statistical dashboards and reports
+- Export capabilities for analysis results
+
+### Stop Web App
+
+```bash
+# Stop the application
+./stop_web_app.py
+
+# Or use Ctrl+C in the terminal
+```
+
 ## 🏗️ Project Structure
 
 ```
@@ -244,9 +403,17 @@ clf_analysis_clean/
 │       ├── myfuncs/        # General utility functions
 │       ├── platform_analysis/  # Platform analysis modules
 │       └── pyarcam/        # CLF and Arcam EBM data handling
+├── web_app/                # Flask web interface
+│   ├── app.py             # Main web application
+│   ├── requirements.txt   # Web app dependencies
+│   └── templates/         # HTML templates
 ├── examples/               # Sample usage scripts
+├── my_outputs/            # Analysis results and visualizations
+├── abp_sourcefiles/       # Source CLF/ABP files
 ├── requirements.txt        # Python dependencies
 ├── setup.py               # Package installation
+├── HOLE_DETECTION_GUIDE.md # Comprehensive hole detection guide
+├── WEB_APP_README.md      # Web application documentation
 ├── CLAUDE.md              # Development guidelines
 └── README.md              # This file
 ```
@@ -312,11 +479,13 @@ _Benchmarks measured on MacBook Pro M1 with 16GB RAM_
 ![Complete](https://img.shields.io/badge/Status-Complete-brightgreen) **CLF file parsing and analysis**  
 ![Complete](https://img.shields.io/badge/Status-Complete-brightgreen) **PyArcam integration with full utilities**  
 ![Complete](https://img.shields.io/badge/Status-Complete-brightgreen) **Shapely-based geometric analysis**  
+![Complete](https://img.shields.io/badge/Status-Complete-brightgreen) **Hole detection and analysis system**  
 ![Complete](https://img.shields.io/badge/Status-Complete-brightgreen) **Multiprocessing optimization**  
 ![Complete](https://img.shields.io/badge/Status-Complete-brightgreen) **Comprehensive logging and error handling**  
 ![Complete](https://img.shields.io/badge/Status-Complete-brightgreen) **Unit testing framework**  
+![Complete](https://img.shields.io/badge/Status-Complete-brightgreen) **Flask web interface**  
 ![In Progress](https://img.shields.io/badge/Status-In%20Progress-yellow) **Advanced visualization features**  
-![In Progress](https://img.shields.io/badge/Status-In%20Progress-yellow) **Web interface for analysis results**
+![In Progress](https://img.shields.io/badge/Status-In%20Progress-yellow) **Machine learning integration**
 
 ## 🔮 Future Enhancements
 
@@ -378,10 +547,12 @@ with Pool(processes=num_processes) as pool:
 Key areas for contribution:
 
 1. Advanced geometric analysis algorithms
-2. Performance optimization
-3. Visualization enhancements
-4. Additional file format support
-5. Machine learning integration
+2. Hole detection optimization and validation
+3. Performance optimization
+4. Visualization enhancements
+5. Web interface improvements
+6. Additional file format support
+7. Machine learning integration
 
 ---
 
@@ -403,6 +574,16 @@ Key areas for contribution:
 
 ## 📝 Development Notes
 
-- Always activate venv if not active
-- Use python3 for execution
-- Check if server is running on port 8080 before running. Never use another port
+### Important Setup Requirements
+
+- **Python Version**: Must use Python 3.11 for full compatibility
+- **Virtual Environment**: Always activate venv before development (`source venv/bin/activate`)
+- **Web App Port**: Default Flask app runs on port 5000, platform analysis uses port 8080
+- **Execution**: Use `python3` for execution to ensure correct Python version
+
+### Development Workflow
+
+- Check if web server is running before starting development
+- Use the provided startup scripts (`./start_web_app.py`) for consistent environment setup
+- All analysis outputs are stored in `my_outputs/` directory
+- CLF source files should be placed in `abp_sourcefiles/` directory

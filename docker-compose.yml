@@ -3,34 +3,25 @@ version: "3.8"
 name: defect-detector-services
 
 services:
-  database-python-handler:
+  clf-abp-path-analysis:
     build: .
-    container_name: database-python-handler
+    container_name: clf-abp-path-analysis
     ports:
-      - "6100:6100"
+      - "6300:6300"
     environment:
-      # Database Configuration - connect to existing mssql container
-      DB_SERVER: mssql,1433
-      DB_USERNAME: sa
-      DB_PASSWORD: S3cure!P@ssw0rd_2025#Db
-      DB_DATABASE: scanalyserdatabase
-      DB_DRIVER: ODBC Driver 18 for SQL Server
       # Flask Configuration
-      FLASK_ENV: development
-      FLASK_DEBUG: "True"
-      SECRET_KEY: your-secret-key-here-change-in-production
-      # MIDAS_BASE_PATH removed - let config.py handle platform detection
+      FLASK_ENV: production
+      FLASK_DEBUG: "False"
+      PORT: 6300
     volumes:
-      - .:/app
-      - /app/venv # Exclude venv from volume mount
-      # MIDAS data volume mount
+      # MIDAS data volume mount - READ/WRITE for analysis outputs
       # For macOS - mount your local MIDAS directory
-      # For Windows - change to: "C:/public/shared/DefectDetectorBuilds:/midas_data:ro"
-      - "/Users/ted.tedford/Documents/MIDAS:/Users/ted.tedford/Documents/MIDAS:ro"
+      # For Windows - change to: "C:/public/shared/DefectDetectorBuilds:/Users/ted.tedford/Documents/MIDAS"
+      - "/Users/ted.tedford/Documents/MIDAS:/Users/ted.tedford/Documents/MIDAS"
     networks:
       - defectdetect-database_default
     restart: unless-stopped
-    # Don't create mssql dependency since it's external
+    # Optional: If service needs to connect to database
     external_links:
       - mssql:mssql
 
