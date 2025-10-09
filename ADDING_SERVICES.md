@@ -5,18 +5,19 @@ This guide explains how to add additional Python services (or other services) to
 ## Architecture Overview
 
 The `defect-detector-services` stack uses a **multi-repository approach** where:
+
 - Each service has its **own repository** with its own `docker-compose.yml`
 - All `docker-compose.yml` files use the **same stack name**: `defect-detector-services`
 - Services automatically join the shared stack and can communicate via the external `defectdetect-database_default` network
 
 ### Current Services
 
-| Service | Port | Repository | Status |
-|---------|------|------------|--------|
-| **mssql** | 1433 | defectdetect-database | ✅ External stack |
-| **database-python-handler** | 6100 | database-python-handler | ✅ Active |
-| **defect-detect-fe** | 6200 | defect-detect-fe | ✅ Active |
-| **clf-abp-path-analysis** | 6300 | clf-analysis | ✅ Active |
+| Service                     | Port | Repository              | Status            |
+| --------------------------- | ---- | ----------------------- | ----------------- |
+| **mssql**                   | 1433 | defectdetect-database   | ✅ External stack |
+| **database-python-handler** | 6100 | database-python-handler | ✅ Active         |
+| **defect-detect-fe**        | 6200 | defect-detect-fe        | ✅ Active         |
+| **clf-abp-path-analysis**   | 6300 | clf-analysis            | ✅ Active         |
 
 All services communicate over the `defectdetect-database_default` Docker network.
 
@@ -25,15 +26,17 @@ All services communicate over the `defectdetect-database_default` Docker network
 **Key Principle**: Each repository contains its own `docker-compose.yml` with `name: defect-detector-services`. Docker Compose automatically merges all services with the same stack name into a single logical stack.
 
 ### Benefits
+
 ✅ Each service is independently deployable  
 ✅ Service repositories are self-contained  
 ✅ No need to modify other repos when adding new services  
 ✅ Services can be started/stopped independently  
-✅ Easier CI/CD and version control  
+✅ Easier CI/CD and version control
 
 ## Prerequisites
 
 Before adding a new service, ensure you have:
+
 - Docker and Docker Compose installed
 - The `defectdetect-database_default` network exists (created by defectdetect-database stack)
 - A working service in its own repository
@@ -79,10 +82,10 @@ def run_analysis_async(job_id, build_id, holes_interval=10.0, create_composite_v
     try:
         jobs[job_id]['status'] = 'running'
         jobs[job_id]['started_at'] = datetime.now().isoformat()
-        
+
         # Run the actual analysis
         run_analysis(build_id, holes_interval, create_composite_views)
-        
+
         jobs[job_id]['status'] = 'completed'
         jobs[job_id]['completed_at'] = datetime.now().isoformat()
     except Exception as e:
@@ -102,12 +105,12 @@ def health():
 def analyze_build(build_id):
     """Trigger analysis for a build (async)"""
     job_id = str(uuid.uuid4())
-    
+
     # Get optional parameters
     data = request.get_json() or {}
     holes_interval = data.get('holes_interval', 10.0)
     create_composite_views = data.get('create_composite_views', True)
-    
+
     # Initialize job
     jobs[job_id] = {
         'job_id': job_id,
@@ -115,14 +118,14 @@ def analyze_build(build_id):
         'status': 'accepted',
         'created_at': datetime.now().isoformat()
     }
-    
+
     # Start background thread
     thread = threading.Thread(
         target=run_analysis_async,
         args=(job_id, build_id, holes_interval, create_composite_views)
     )
     thread.start()
-    
+
     return jsonify({
         'status': 'accepted',
         'job_id': job_id,
@@ -142,6 +145,7 @@ if __name__ == '__main__':
 ```
 
 **Key Design Decisions:**
+
 - ✅ **Async Processing**: Returns job_id immediately (202 Accepted), runs analysis in background thread
 - ✅ **CORS Configuration**: Allows frontend to make cross-origin requests
 - ✅ **Health Check**: Enables Docker health monitoring
@@ -183,6 +187,7 @@ CMD ["python", "clf_analysis_api.py"]
 ```
 
 **Important Notes:**
+
 - Use `python:3.12-slim` for Python 3.12 support
 - Install system dependencies needed by your Python packages (e.g., OpenCV needs `libgl1`)
 - Use `libgl1` not `libgl1-mesa-glx` (unavailable in Debian Trixie)
@@ -207,6 +212,7 @@ requests==2.32.3
 ```
 
 **Python 3.12 Compatibility:**
+
 - Use `numpy>=1.26.4` (1.24.3 requires building from source)
 - Check PyPI for Python 3.12 wheel availability before pinning versions
 
@@ -250,6 +256,7 @@ networks:
 ```
 
 **Key Points:**
+
 - ✅ **Stack Name**: `name: defect-detector-services` - MUST match other repos
 - ✅ **Container Name**: Unique name for your service
 - ✅ **Port**: Choose available port (6300, 6400, 6500, etc.)
@@ -360,13 +367,13 @@ docker-compose restart clf-abp-path-analysis
 
 Choose ports in the **6000 range** to avoid conflicts:
 
-| Service | Port | Repository | Status |
-|---------|------|------------|--------|
-| database-python-handler | 6100 | database-python-handler | ✅ In use |
-| defect-detect-fe | 6200 | defect-detect-fe | ✅ In use |
-| clf-abp-path-analysis | 6300 | clf-analysis | ✅ In use |
-| *your-new-service* | 6400 | *your-repo* | 🟢 Available |
-| *another-service* | 6500 | *another-repo* | 🟢 Available |
+| Service                 | Port | Repository              | Status       |
+| ----------------------- | ---- | ----------------------- | ------------ |
+| database-python-handler | 6100 | database-python-handler | ✅ In use    |
+| defect-detect-fe        | 6200 | defect-detect-fe        | ✅ In use    |
+| clf-abp-path-analysis   | 6300 | clf-analysis            | ✅ In use    |
+| _your-new-service_      | 6400 | _your-repo_             | 🟢 Available |
+| _another-service_       | 6500 | _another-repo_          | 🟢 Available |
 
 ## Common Patterns and Configuration
 
@@ -374,7 +381,8 @@ Choose ports in the **6000 range** to avoid conflicts:
 
 **Use Case**: Analysis/processing that takes several minutes
 
-**Implementation**: 
+**Implementation**:
+
 - Return job_id immediately (HTTP 202 Accepted)
 - Run analysis in background thread
 - Provide status endpoint for polling
@@ -411,13 +419,13 @@ environment:
   DB_PORT: 1433
   DB_NAME: scanalyserdatabase
   DB_USER: sa
-  DB_PASSWORD: ${DB_PASSWORD}  # From .env file
-  
+  DB_PASSWORD: ${DB_PASSWORD} # From .env file
+
   # Service configuration
   SERVICE_PORT: 6300
   LOG_LEVEL: INFO
   DEBUG: "false"
-  
+
   # External service URLs (inter-service communication)
   BACKEND_URL: http://database-python-handler:6100
   FRONTEND_URL: http://defect-detect-fe:6200
@@ -429,10 +437,10 @@ environment:
 volumes:
   # Mount source code for development (hot reload)
   - /path/to/my-python-service:/app
-  
+
   # Persistent data storage
   - ./data:/app/data
-  
+
   # Logs
   - ./logs:/app/logs
 ```
@@ -452,7 +460,7 @@ healthcheck:
 
 ```yaml
 depends_on:
-  - database-python-handler  # Wait for backend to start first
+  - database-python-handler # Wait for backend to start first
 ```
 
 ## Inter-Service Communication
@@ -658,10 +666,12 @@ docker-compose up -d
 **Symptom**: `pip install` fails during Docker build
 
 **Common Causes**:
+
 - Package doesn't have pre-built wheels for Python 3.12
 - Missing system dependencies
 
 **Solutions**:
+
 ```dockerfile
 # Update package versions to ones with Python 3.12 wheels
 # Example: numpy==1.26.4 (not 1.24.3)
@@ -739,6 +749,7 @@ docker compose -p defect-detector-services ps
 The **multi-repo Docker Compose pattern** makes adding services to `defect-detector-services` straightforward:
 
 ### Key Steps:
+
 1. ✅ Create your service in its own repository
 2. ✅ Create `docker-compose.yml` with `name: defect-detector-services`
 3. ✅ Use `networks: defectdetect-database_default` with `external: true`
@@ -750,6 +761,7 @@ The **multi-repo Docker Compose pattern** makes adding services to `defect-detec
 9. ✅ Update documentation
 
 ### Critical Points:
+
 - **Stack Name**: Must be `defect-detector-services` in ALL repos
 - **Network**: Must use external `defectdetect-database_default` network
 - **Ports**: Choose available ports in 6000 range
@@ -757,6 +769,7 @@ The **multi-repo Docker Compose pattern** makes adding services to `defect-detec
 - **Communication**: Services use container names (e.g., `http://clf-abp-path-analysis:6300`)
 
 ### Real Example:
+
 See **clf-abp-path-analysis** service in the `clf-analysis` repository for a complete working implementation of this pattern.
 
 Your new service will automatically join the stack and communicate with all other services! 🚀
