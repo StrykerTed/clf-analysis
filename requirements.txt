@@ -23,3 +23,8 @@ click==8.1.7
 blinker==1.7.0
 markupsafe==2.1.3
 requests==2.32.3
+
+# GPU acceleration libraries (with CPU fallback)
+# PyTorch with CUDA support - will auto-detect and use GPU if available
+torch==2.5.1
+torchvision==0.20.1

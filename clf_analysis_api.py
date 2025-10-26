@@ -14,6 +14,9 @@ import uuid
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
+# Import GPU detection utility (logs device info on import)
+from utils.device_utils import get_device, log_device_info
+
 # Import the run_analysis function
 from tools.get_platform_paths_shapes_shapely import run_analysis
 

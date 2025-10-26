@@ -97,6 +97,109 @@ def process_height(args):
         return {"height": height, "error": str(e), "success": False}
 
 
+def process_file_worker(args):
+    """
+    Worker function to process a single CLF file at all its relevant heights.
+    Designed for multiprocessing parallelization.
+    
+    Args:
+        args: tuple containing (file_info, global_heights, output_dir, clf_info, 
+                                draw_points, draw_lines, save_layer_partials, 
+                                is_excluded, draw_excluded, exclusion_patterns)
+    
+    Returns:
+        dict: Processing results including layers, identifier counts, and statistics
+    """
+    (file_info, global_heights, output_dir, clf_info, 
+     draw_points, draw_lines, save_layer_partials, 
+     is_excluded, draw_excluded, exclusion_patterns) = args
+    
+    # Import here to avoid pickling issues with multiprocessing
+    from utils.platform_analysis.data_processing import analyze_layer
+    from utils.pyarcam.clfutil import CLFFile
+    from utils.platform_analysis.exclusion_handler import track_excluded_file_detail
+    
+    try:
+        # Reload the CLFFile object (can't pickle it across processes)
+        part = CLFFile(clf_info['path'])
+        
+        result = {
+            'filename': clf_info['name'],
+            'folder': clf_info['folder'],
+            'is_excluded': is_excluded,
+            'layers': [],
+            'path_counts': {},
+            'shape_types': {},
+            'file_identifier_counts': {},
+            'shapes_by_identifier': {},
+            'excluded_file_identifier_counts': {},
+            'excluded_shapes_by_identifier': {},
+            'heights_processed': 0,
+            'heights_in_range': 0,
+            'excluded_file_detail': None,
+            'error': None,
+            'z_range': file_info['z_range']
+            }
+        
+        print(f"\n[Worker] Processing {'EXCLUDED' if is_excluded else 'INCLUDED'}: {clf_info['name']}")
+        
+        # Process at all global heights
+        for height in global_heights:
+            tolerance = 1.0
+            if (height >= file_info['z_range'][0] - tolerance and
+                height <= file_info['z_range'][1] + tolerance):
+                
+                result['heights_in_range'] += 1
+                
+                if not is_excluded:
+                    # Process included files
+                    layer_info = analyze_layer(
+                        part, height, output_dir, clf_info,
+                        result['path_counts'], result['shape_types'], 
+                        result['file_identifier_counts'],
+                        result['shapes_by_identifier'],
+                        draw_points=draw_points,
+                        draw_lines=draw_lines,
+                        save_layer_partials=save_layer_partials
+                    )
+                    if isinstance(layer_info, dict):
+                        result['layers'].append(layer_info)
+                    result['heights_processed'] += 1
+                    
+                elif draw_excluded:
+                    # Process excluded files
+                    analyze_layer(
+                        part, height, output_dir, clf_info,
+                        {}, {}, 
+                        result['excluded_file_identifier_counts'],
+                        result['excluded_shapes_by_identifier'],
+                        draw_points=draw_points,
+                        draw_lines=draw_lines,
+                        save_layer_partials=False
+                    )
+                    result['heights_processed'] += 1
+        
+        # Track excluded file details if needed
+        if is_excluded and draw_excluded:
+            result['excluded_file_detail'] = track_excluded_file_detail(
+                clf_info, part, exclusion_patterns, 
+                result['heights_processed']
+            )
+        
+        print(f"[Worker] Completed {clf_info['name']}: {result['heights_processed']} heights processed")
+        return result
+        
+    except Exception as e:
+        print(f"[Worker] Error processing {clf_info['name']}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'filename': clf_info['name'],
+            'error': str(e),
+            'heights_processed': 0
+        }
+
+
 def run_analysis(build_id=None, holes_interval=10, create_composite_views=False):
     """
     Run the platform paths analysis with the given parameters.
@@ -404,64 +507,101 @@ def run_analysis(build_id=None, holes_interval=10, create_composite_views=False)
         print(f"  This should capture shapes at heights like 141.3mm that were previously missed")
         
         # STEP 3: Process each file at all global heights
+        # STEP 3: Process each file at all global heights using multiprocessing
         print(f"\nStep 2: Processing {len(valid_files)} files at {num_height_samples} heights...")
         
+        # Determine number of worker processes
+        num_workers = min(multiprocessing.cpu_count(), len(valid_files))
+        print(f"Using {num_workers} parallel workers (CPU cores: {multiprocessing.cpu_count()})")
+        
+        # Prepare arguments for each file
+        file_args = []
         for file_info in valid_files:
             clf_info = file_info["clf_info"]
-            part = file_info["part_object"]
             is_excluded = file_info["is_excluded"]
             
-            print(f"\nProcessing {'EXCLUDED' if is_excluded else 'INCLUDED'}: {clf_info['name']} in {clf_info['folder']}")
-            print(f"  File height range: {file_info['z_range'][0]:.2f} to {file_info['z_range'][1]:.2f} mm")
-            
-            heights_processed = 0
-            heights_in_range = 0
-            
-            # Process at all global heights (not just file-specific heights)
-            for height in global_heights:
-                # Use more generous tolerance to ensure we don't miss edge cases
-                tolerance = 1.0  # Increased from 0.1mm to 1.0mm for better coverage
-                if (height >= file_info['z_range'][0] - tolerance and 
-                    height <= file_info['z_range'][1] + tolerance):
-                    
-                    heights_in_range += 1
-                    
-                    if not is_excluded:
-                        # Process included files normally
-                        layer_info = analyze_layer(part, height, output_dir, clf_info, 
-                                                path_counts, shape_types, file_identifier_counts,
-                                                shapes_by_identifier,
-                                                draw_points=draw_points, 
-                                                draw_lines=draw_lines,
-                                                save_layer_partials=save_layer_partials)
-                        if isinstance(layer_info, dict):
-                            platform_info["layers"].append(layer_info)
-                        heights_processed += 1
-                        
-                    elif draw_excluded:
-                        # Process excluded files for excluded view
-                        analyze_layer(part, height, output_dir, clf_info, 
-                                    {}, {}, excluded_file_identifier_counts,
-                                    excluded_shapes_by_identifier,
-                                    draw_points=draw_points, 
-                                    draw_lines=draw_lines,
-                                    save_layer_partials=False)  # Don't save partials for excluded
-                        heights_processed += 1
-            
-            print(f"  Heights in file range: {heights_in_range}/{num_height_samples}")
-            print(f"  Heights actually processed: {heights_processed}")
-            if heights_in_range > heights_processed:
-                print(f"  WARNING: {heights_in_range - heights_processed} heights in range were not processed!")
-            
-            # Track excluded file details
-            if is_excluded and draw_excluded:
-                excluded_file_detail = track_excluded_file_detail(
-                    clf_info, part, exclusion_patterns, heights_processed
-                )
-                excluded_files_details.append(excluded_file_detail)
+            # Create a picklable version of file_info without the part_object
+            picklable_file_info = {
+                'filename': file_info['filename'],
+                'folder': file_info['folder'],
+                'num_layers': file_info['num_layers'],
+                'z_range': file_info['z_range'],
+                'bounds': file_info['bounds'],
+                'clf_info': clf_info,
+                'is_excluded': is_excluded
+            }
+
+            args = (
+                picklable_file_info,
+                global_heights,
+                output_dir,
+                clf_info,
+                draw_points,
+                draw_lines,
+                save_layer_partials,
+                is_excluded,
+                draw_excluded,
+                exclusion_patterns
+            )
+            file_args.append(args)
         
-        print(f"\nGlobal height sampling complete!")
+        # Process files in parallel
+        with Pool(processes=num_workers) as pool:
+            results = pool.map(process_file_worker, file_args)
+        
+        # Aggregate results from all workers
+        print(f"\nAggregating results from {len(results)} files...")
+        for result in results:
+            if result.get('error'):
+                print(f"WARNING: Error processing {result['filename']}: {result['error']}")
+                continue
+            
+            # Add layers to platform_info
+            for layer in result.get('layers', []):
+                platform_info["layers"].append(layer)
+            
+            # Deep merge function for nested structures
+            def deep_merge_dict(target, source):
+                """Recursively merge source dict into target dict"""
+                for key, value in source.items():
+                    if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+                        deep_merge_dict(target[key], value)
+                    elif key in target and isinstance(target[key], (int, float)) and isinstance(value, (int, float)):
+                        target[key] += value
+                    elif key in target and isinstance(target[key], list) and isinstance(value, list):
+                        target[key].extend(value)
+                    else:
+                        if isinstance(value, dict):
+                            if key not in target:
+                                target[key] = {}
+                            deep_merge_dict(target[key], value)
+                        elif isinstance(value, list):
+                            if key not in target:
+                                target[key] = []
+                            target[key].extend(value)
+                        else:
+                            target[key] = target.get(key, 0) + value if isinstance(value, (int, float)) else value
+            
+            # Merge using deep merge
+            deep_merge_dict(path_counts, result.get('path_counts', {}))
+            deep_merge_dict(shape_types, result.get('shape_types', {}))
+            deep_merge_dict(file_identifier_counts, result.get('file_identifier_counts', {}))
+            deep_merge_dict(shapes_by_identifier, result.get('shapes_by_identifier', {}))
+            deep_merge_dict(excluded_file_identifier_counts, result.get('excluded_file_identifier_counts', {}))
+            deep_merge_dict(excluded_shapes_by_identifier, result.get('excluded_shapes_by_identifier', {}))
+            
+            # Add excluded file details
+            if result.get('excluded_file_detail'):
+                excluded_files_details.append(result['excluded_file_detail'])
+            
+            # Print processing summary
+            print(f"Processed {result['filename']}: {result['heights_processed']}/{result['heights_in_range']} heights")
+
+            print(f"Processed {result['filename']}: {result['heights_processed']}/{result['heights_in_range']} heights")
+
         print(f"Total height range processed: {global_min_height:.2f} to {global_max_height:.2f} mm")
+        print(f"Height samples used: {num_height_samples}")
+
         print(f"Height samples used: {num_height_samples}")
         
         # Create file identifier summary
