@@ -140,7 +140,7 @@ def run_analysis(build_id=None, holes_interval=10, create_composite_views=False)
     print(f"Create composite views: {create_composite_views}")
     
     # Set up build path early so we can log the start
-    main_build_folder = "/Users/ted.tedford/Documents/MIDAS"
+    main_build_folder = os.getenv("MIDAS_BASE_PATH", "/midas_data")
     build_path = setup_build_directory(build_id, main_build_folder)
     logger, log_queue, listener = setup_logging(build_path)
     
@@ -217,7 +217,7 @@ def run_analysis(build_id=None, holes_interval=10, create_composite_views=False)
         # build_path was already created earlier for logging
         
         # Create the complete directory structure using utility function
-        directories = create_directory_structure(build_id, "/Users/ted.tedford/Documents/MIDAS", clear_existing=True)
+        directories = create_directory_structure(build_id, os.getenv("MIDAS_BASE_PATH", "/midas_data"), clear_existing=True)
         
         # Extract paths for use in the rest of the script
         # Note: build_path is already created above, so we get it from directories for consistency

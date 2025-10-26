@@ -85,7 +85,7 @@ def setup_clf_analysis_directories(build_path, clear_existing=True):
     return result
 
 
-def setup_build_directory(build_id, main_build_folder="/Users/ted.tedford/Documents/MIDAS"):
+def setup_build_directory(build_id, main_build_folder=None):
     """
     Set up the main build directory for a given build ID.
     
@@ -101,13 +101,15 @@ def setup_build_directory(build_id, main_build_folder="/Users/ted.tedford/Docume
     build_path = os.path.join(main_build_folder, build_id)
     os.makedirs(build_path, exist_ok=True)
     
+    if main_build_folder is None:
+        main_build_folder = os.getenv("MIDAS_BASE_PATH", "/midas_data")
     print(f"Created build directory: {build_path}")
     logger.info(f"Created build directory: {build_path}")
     
     return build_path
 
 
-def create_directory_structure(build_id, main_build_folder="/Users/ted.tedford/Documents/MIDAS", clear_existing=True):
+def create_directory_structure(build_id, main_build_folder=None, clear_existing=True):
     """
     Create the complete directory structure for CLF analysis.
     This combines build directory setup and clf_analysis directory setup.
@@ -123,6 +125,8 @@ def create_directory_structure(build_id, main_build_folder="/Users/ted.tedford/D
     # Set up main build directory
     build_path = setup_build_directory(build_id, main_build_folder)
     
+    if main_build_folder is None:
+        main_build_folder = os.getenv("MIDAS_BASE_PATH", "/midas_data")
     # Set up clf_analysis subdirectory structure
     directories = setup_clf_analysis_directories(build_path, clear_existing)
     
