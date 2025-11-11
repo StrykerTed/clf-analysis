@@ -84,7 +84,8 @@ wsl bash -c "cd /mnt/c/Users/ttedford/Documents/dockerized-defect-detect/clf-ana
 ```
 
 **⚠️ Important Notes:**
-- Must use WSL Docker Engine (not Docker Desktop)  
+
+- Must use WSL Docker Engine (not Docker Desktop)
 - Volume mount uses WSL path format: `/mnt/c/Users/Public/MIDAS:/midas_data:rw`
 - **CRITICAL**: Volume must be `:rw` (read-write) not `:ro` (read-only) - service needs to write output files, logs, and update `processes_run.json`
 - Service automatically joins the `defect-detector-services` stack
