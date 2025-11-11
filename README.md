@@ -51,18 +51,44 @@
 
 ### Option 1: Docker Deployment (Recommended for Production)
 
-The CLF Analysis service can be deployed as a containerized API service:
+The CLF Analysis service can be deployed as a containerized API service using WSL Docker Engine:
+
+**🚀 Quick Start (Windows with WSL):**
 
 ```bash
-# Build the Docker image
-docker build -t clf-abp-path-analysis:latest .
+# Navigate to clf-analysis directory and build/start using WSL
+wsl bash -c "cd /mnt/c/Users/ttedford/Documents/dockerized-defect-detect/clf-analysis && docker compose up -d --build"
 
-# Start the service
-docker-compose up -d clf-abp-path-analysis
+# Alternative: Build and start separately
+wsl bash -c "cd /mnt/c/Users/ttedford/Documents/dockerized-defect-detect/clf-analysis && docker compose build --no-cache"
+wsl bash -c "cd /mnt/c/Users/ttedford/Documents/dockerized-defect-detect/clf-analysis && docker compose up -d"
 
-# Access the API
-curl http://localhost:6300/health
+# If you change volume mount settings, restart the container
+wsl bash -c "cd /mnt/c/Users/ttedford/Documents/dockerized-defect-detect/clf-analysis && docker compose down && docker compose up -d"
 ```
+
+**✅ Verify Deployment:**
+
+```bash
+# Check container status
+wsl docker ps | grep clf-abp-path-analysis
+
+# Test health endpoint
+curl http://localhost:6300/health
+
+# Test write permissions (service needs to write analysis results)
+wsl docker exec clf-abp-path-analysis touch /midas_data/test_write.txt && echo "Write access OK"
+
+# View logs
+wsl bash -c "cd /mnt/c/Users/ttedford/Documents/dockerized-defect-detect/clf-analysis && docker compose logs -f"
+```
+
+**⚠️ Important Notes:**
+- Must use WSL Docker Engine (not Docker Desktop)  
+- Volume mount uses WSL path format: `/mnt/c/Users/Public/MIDAS:/midas_data:rw`
+- **CRITICAL**: Volume must be `:rw` (read-write) not `:ro` (read-only) - service needs to write output files, logs, and update `processes_run.json`
+- Service automatically joins the `defect-detector-services` stack
+- If volume mount changes, container must be restarted to apply changes
 
 **API Quick Start:**
 

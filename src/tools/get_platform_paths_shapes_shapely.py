@@ -251,13 +251,13 @@ def run_analysis(build_id=None, holes_interval=10, create_composite_views=False)
     run_id = create_process_log_start(build_path, "clf_analysis", start_time)
     logger.info(f"Started process logging with run_id: {run_id}")
     
-    abp_file = os.path.join(build_path, f"preprocess build-{build_id}.abp")
+    # Find any .abp file in the build_path directory
+    abp_files = [f for f in os.listdir(build_path) if f.lower().endswith('.abp')]
     
-    # Check if the ABP file exists
-    if not os.path.exists(abp_file):
-        error_msg = f"ABP file not found: {abp_file}"
+    if not abp_files:
+        error_msg = f"No ABP file found in: {build_path}"
         print(error_msg)
-        print("Please check the build ID and ensure the file exists.")
+        print("Please ensure an .abp file exists in the build directory.")
         # Log the failure and stop
         end_time = datetime.now()
         update_process_log_finish(build_path, "clf_analysis", run_id, end_time, "failed")
@@ -266,7 +266,18 @@ def run_analysis(build_id=None, holes_interval=10, create_composite_views=False)
             "error": error_msg,
             "build_id": build_id
         }
-
+    
+    # Use the first .abp file found (or if multiple, prefer one with build_id in name)
+    abp_file = None
+    for f in abp_files:
+        if build_id in f:
+            abp_file = os.path.join(build_path, f)
+            break
+    if not abp_file:
+        abp_file = os.path.join(build_path, abp_files[0])
+    
+    logger.info(f"Found ABP file: {os.path.basename(abp_file)}")
+    logger.info(f"Found ABP file: {os.path.basename(abp_file)}")
     logger.info(f"Processing ABP file: {abp_file}")
     
     build_dir = setup_abp_folders(abp_file)

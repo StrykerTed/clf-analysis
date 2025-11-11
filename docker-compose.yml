@@ -17,7 +17,7 @@ services:
       # MIDAS data volume mount - READ/WRITE for analysis outputs
       # For macOS - mount your local MIDAS directory
       # For Windows - change to: "C:/public/shared/DefectDetectorBuilds:/Users/ted.tedford/Documents/MIDAS"
-      - "C:/Users/Public/MIDAS:/midas_data:ro"
+      - "/mnt/c/Users/Public/MIDAS:/midas_data:rw"
     networks:
       - defectdetect-database_default
     restart: unless-stopped
