@@ -356,6 +356,14 @@ def run_analysis(build_id=None, holes_interval=10, create_composite_views=False)
         logger.info("Finding CLF files...")
         all_clf_files = find_clf_files(build_dir)
         
+        # Collect unique folder names
+        all_unique_folders = set()
+        included_unique_folders = set()
+        excluded_unique_folders = set()
+        
+        for clf_info in all_clf_files:
+            all_unique_folders.add(clf_info['folder'])
+        
         # Filter CLF files based on exclusion patterns
         if exclude_folders:
             clf_files = []
@@ -363,17 +371,41 @@ def run_analysis(build_id=None, holes_interval=10, create_composite_views=False)
                 should_skip = should_skip_folder(clf_info['folder'], exclusion_patterns)
                 if should_skip:
                     logger.debug(f"Skipping file: {clf_info['name']} in {clf_info['folder']}")
+                    excluded_unique_folders.add(clf_info['folder'])
                 else:
                     clf_files.append(clf_info)
                     logger.debug(f"Keeping file: {clf_info['name']} in {clf_info['folder']}")
+                    included_unique_folders.add(clf_info['folder'])
                     
             excluded_count = len(all_clf_files) - len(clf_files)
             logger.info(f"Found {len(all_clf_files)} total CLF files")
             logger.info(f"Excluded {excluded_count} files based on folder patterns")
             logger.info(f"Processing {len(clf_files)} CLF files")
+            
+            # Log unique folder information
+            logger.info(f"\nUnique folder analysis:")
+            logger.info(f"  Total unique folders found: {len(all_unique_folders)}")
+            logger.info(f"  Included folders: {len(included_unique_folders)}")
+            logger.info(f"  Excluded folders: {len(excluded_unique_folders)}")
+            
+            logger.info(f"\nIncluded folder names:")
+            for folder in sorted(included_unique_folders):
+                logger.info(f"  ✓ {folder}")
+            
+            if excluded_unique_folders:
+                logger.info(f"\nExcluded folder names:")
+                for folder in sorted(excluded_unique_folders):
+                    logger.info(f"  ✗ {folder}")
         else:
             clf_files = all_clf_files
             logger.info(f"Found {len(clf_files)} CLF files")
+            
+            # Log unique folder information when exclusions are disabled
+            logger.info(f"\nUnique folder analysis:")
+            logger.info(f"  Total unique folders found: {len(all_unique_folders)}")
+            logger.info(f"\nAll folder names:")
+            for folder in sorted(all_unique_folders):
+                logger.info(f"  • {folder}")
         
         # Dictionaries to track statistics
         path_counts = {}
@@ -402,6 +434,14 @@ def run_analysis(build_id=None, holes_interval=10, create_composite_views=False)
                 "num_samples": None,
                 "height_samples": [],
                 "padding_applied": None
+            },
+            "folder_info": {
+                "total_unique_folders": len(all_unique_folders),
+                "all_folders": sorted(list(all_unique_folders)),
+                "included_folders": sorted(list(included_unique_folders)) if exclude_folders else sorted(list(all_unique_folders)),
+                "excluded_folders": sorted(list(excluded_unique_folders)) if exclude_folders else [],
+                "included_folder_count": len(included_unique_folders) if exclude_folders else len(all_unique_folders),
+                "excluded_folder_count": len(excluded_unique_folders) if exclude_folders else 0
             },
             "exclusion_info": {
                 "exclusions_enabled": exclude_folders,

@@ -6,15 +6,19 @@
         "Supports",
         "ebm-ti64",
         "Porous",
+        "porous",
         "Cylinder",
         "Support",
         "Coupon",
-        "s_Skin"
+        "s_Skin",
+        "hiplabel",
+        "Birdcage",
+        "_s_"
     ],
     "metadata": {
         "description": "List of partial folder names that should be excluded from CLF processing",
-        "version": "1.0",
-        "last_updated": "2024-03-19",
+        "version": "1.2",
+        "last_updated": "2025-11-15",
         "usage": "Match these patterns against folder names to determine if a folder should be skipped during CLF processing"
     }
 }
