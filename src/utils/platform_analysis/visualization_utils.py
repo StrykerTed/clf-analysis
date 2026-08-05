@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np   
 import json
 from matplotlib.patches import Polygon
+from matplotlib.path import Path as MplPath
 
 # Import platform configuration
 from config import PLATFORM_HALF_SIZE_MM, PLATFORM_SIZE_MM
@@ -546,10 +547,82 @@ def create_platform_composite(clf_files, output_dir, height=1.0, fill_closed=Fal
     return os.path.join("composite_platforms", filename)
 
 
+def _signed_area(points):
+    """Shoelace signed area. Positive = counter-clockwise, negative = clockwise."""
+    x = np.asarray(points, dtype=float)[:, 0]
+    y = np.asarray(points, dtype=float)[:, 1]
+    return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+
+
+def _polygon_contains(outer_points, inner_points, samples=12):
+    """True when inner_points lies inside outer_points.
+
+    Samples vertices rather than testing one point, because a single centroid can fall outside
+    a concave contour (these parts are crescents, so that is the common case, not the rare one).
+    A bounding-box check rejects the majority of pairs before the expensive test.
+    """
+    outer = np.asarray(outer_points, dtype=float)
+    inner = np.asarray(inner_points, dtype=float)
+    if len(outer) < 3 or len(inner) < 3:
+        return False
+
+    if (inner[:, 0].min() < outer[:, 0].min() or inner[:, 0].max() > outer[:, 0].max() or
+            inner[:, 1].min() < outer[:, 1].min() or inner[:, 1].max() > outer[:, 1].max()):
+        return False
+
+    step = max(1, len(inner) // samples)
+    probes = inner[::step][:samples]
+    if len(probes) == 0:
+        return False
+    inside = MplPath(outer).contains_points(probes)
+    return int(np.sum(inside)) >= max(1, int(len(probes) * 0.8))
+
+
+def _classify_paths_by_nesting(paths, context=''):
+    """Classify each path of one shape as exterior or hole, by even-odd nesting depth.
+
+    Returns a list of (is_hole, parent_index) with parent_index the immediate container, or None.
+
+    Why nesting and not the old rule: the previous test asked "is this the second shape's first
+    path?", which depends only on how the CLF happens to pack contours. Measured on build 520643,
+    the same 18 parts one millimetre apart were packed as two shapes at 147.80mm and one shape at
+    148.80mm, so the same physical slot was classified as a hole at one height and as solid metal
+    at the next. Nesting depth asks a question about the geometry, so packing cannot change it.
+
+    Winding direction is computed as an independent cross-check and any disagreement is reported,
+    rather than trusting either signal silently.
+    """
+    count = len(paths)
+    result = [(False, None)] * count
+    if count < 2:
+        return result
+
+    areas = [_signed_area(p) for p in paths]
+    for i in range(count):
+        containers = [j for j in range(count)
+                      if j != i and _polygon_contains(paths[j], paths[i])]
+        depth = len(containers)
+        is_hole = (depth % 2) == 1
+        parent = None
+        if containers:
+            # Immediate parent = the smallest container by absolute area.
+            parent = min(containers, key=lambda j: abs(areas[j]))
+        result[i] = (is_hole, parent)
+
+        # Cross-check: an exterior is normally wound CCW and a hole CW. Report, do not override.
+        expected_hole = areas[i] < 0
+        if is_hole != expected_hole:
+            print(f"    NOTE: winding/nesting disagree for path {i}{context}: "
+                  f"nesting depth {depth} -> {'hole' if is_hole else 'exterior'}, "
+                  f"signed area {areas[i]:+.3f} -> {'hole' if expected_hole else 'exterior'}. "
+                  f"Using nesting.")
+    return result
+
+
 def process_layer_data(clf_info, height, colors):
     """Helper function to process a single layer and extract shape data.
     Used by create_clean_platform for parallel processing.
-    Now includes hole detection using Shape[1] Path[0] logic exactly as in baseline_visualization_test_v2.py."""
+    Holes are detected geometrically, by even-odd nesting depth within each shape."""
     shape_data_list = []
     
     try:
@@ -565,11 +638,12 @@ def process_layer_data(clf_info, height, colors):
             shapes = list(layer.shapes)
             print(f"    Found {len(shapes)} shapes in layer at {height}mm for {clf_info['name']}")
             
-            # Check if this folder can contain holes (must contain "Skin" in folder name)
+            # Folder name is no longer a gate on hole detection. It used to require "Skin" in the
+            # folder, which silently prevented any other CLF from ever reporting a hole even when
+            # its contours were plainly nested. Nesting is a property of the geometry, not of the
+            # file it arrived in, so it is tested for every shape.
             folder_name = clf_info['folder']
-            can_have_holes = 'Skin' in folder_name
-            
-            # Process each shape in the layer using the exact logic from baseline_visualization_test_v2.py
+
             for i, shape in enumerate(shapes):
                 color = colors.get(clf_info['name'], 'gray')
                 shape_identifier = None
@@ -577,6 +651,25 @@ def process_layer_data(clf_info, height, colors):
                     shape_identifier = shape.model.id
                     
                 if hasattr(shape, 'points') and shape.points:
+                    # Classify this shape's paths once, up front. Nesting is a relationship
+                    # between the contours of a shape, so it cannot be decided one path at a time.
+                    valid_paths = [
+                        (idx, pts) for idx, pts in enumerate(shape.points)
+                        if isinstance(pts, np.ndarray) and pts.shape[0] >= 3 and pts.shape[1] >= 2
+                    ]
+                    nesting = _classify_paths_by_nesting(
+                        [pts for _, pts in valid_paths],
+                        context=f" (shape {i} of {clf_info['name']} at {height}mm)"
+                    )
+                    hole_by_path_idx = {}
+                    parent_by_path_idx = {}
+                    for slot, (idx, _pts) in enumerate(valid_paths):
+                        path_is_hole, parent_slot = nesting[slot]
+                        hole_by_path_idx[idx] = path_is_hole
+                        parent_by_path_idx[idx] = (
+                            valid_paths[parent_slot][0] if parent_slot is not None else None
+                        )
+
                     # Process each path in the shape
                     for path_idx, points in enumerate(shape.points):
                         if isinstance(points, np.ndarray) and points.shape[0] >= 3 and points.shape[1] >= 2:
@@ -592,14 +685,15 @@ def process_layer_data(clf_info, height, colors):
                             # Create unique identifier for this path
                             path_id = f"{shape_identifier}_path_{path_idx}" if shape_identifier else f"shape_{i}_path_{path_idx}"
                             
-                            # Determine if this path is a hole using exact logic from baseline_visualization_test_v2.py:
-                            # Holes are Shape[1] Path[0] (second shape, first path) in files with at least 2 shapes
-                            # AND the folder must contain "Skin"
-                            is_hole = (i == 1 and path_idx == 0 and len(shapes) >= 2 and can_have_holes)
-                            
+                            # Hole if this contour sits inside an odd number of the other contours
+                            # of the same shape (even-odd rule), decided in _classify_paths_by_nesting.
+                            is_hole = hole_by_path_idx.get(path_idx, False)
+                            parent_path_idx = parent_by_path_idx.get(path_idx)
+
                             if is_hole:
-                                print(f"  Found hole: Shape[1] Path[0] with {len(points)} points in {folder_name}")
-                            
+                                print(f"  Found hole: shape {i} path {path_idx} "
+                                      f"({len(points)} points) inside path {parent_path_idx} in {folder_name}")
+
                             # Create shape data for this path
                             shape_data = {
                                 'type': 'path',
@@ -611,8 +705,16 @@ def process_layer_data(clf_info, height, colors):
                                 'fill_closed': True,  # Will be updated by main function
                                 'should_close': should_close,
                                 'identifier': path_id,
-                                'parent_shape_id': f"{shape_identifier}_path_0" if is_hole else None,
-                                'parent_shape_index': 0 if is_hole else None,  # Parent is Shape[0]
+                                # Parent is the contour this hole sits inside, within the SAME shape.
+                                # Previously parent_shape_id pointed at path 0 of the hole's own shape
+                                # while parent_shape_index was hardcoded 0 - the two disagreed.
+                                'parent_shape_id': (
+                                    (f"{shape_identifier}_path_{parent_path_idx}" if shape_identifier
+                                     else f"shape_{i}_path_{parent_path_idx}")
+                                    if is_hole and parent_path_idx is not None else None
+                                ),
+                                'parent_shape_index': i if is_hole else None,
+                                'parent_path_index': parent_path_idx if is_hole else None,
                                 'is_hole': is_hole,
                                 'path_index': path_idx,
                                 'shape_index': i,
@@ -1420,28 +1522,40 @@ def create_combined_holes_platform_view(clf_files, output_dir, height=134.0):
                 exteriors_in_file = 0
                 holes_in_file = 0
                 
-                # Check if this file can contain holes (must contain 'skin' in folder name, case-insensitive)
-                can_have_holes = 'skin' in clf_info['folder'].lower()
-                
-                # Process each shape to find holes - use correct hole detection logic (Shape[1] Path[0])
+                # Hole detection uses the same geometric rule as process_layer_data. These two
+                # used to carry separate copies of the old index rule that did not even agree on
+                # case ('Skin' here vs 'skin' there), so a file could be hole-bearing in one view
+                # and not the other. One shared function now decides for both.
+                can_have_holes = True  # retained for the summary payload below
+
                 for i, shape in enumerate(shapes):
                     if not hasattr(shape, 'points') or not shape.points:
                         continue
-                        
+
                     # Get identifier for shape
                     identifier = "unknown"
                     if hasattr(shape, 'model') and hasattr(shape.model, 'id'):
                         identifier = str(shape.model.id)
-                    
+
+                    valid_paths = [
+                        (idx, pts) for idx, pts in enumerate(shape.points)
+                        if isinstance(pts, np.ndarray) and pts.shape[0] >= 3 and pts.shape[1] >= 2
+                    ]
+                    nesting = _classify_paths_by_nesting(
+                        [pts for _, pts in valid_paths],
+                        context=f" (holes view, shape {i} of {clf_info['name']})"
+                    )
+                    hole_by_path_idx = {
+                        idx: nesting[slot][0] for slot, (idx, _pts) in enumerate(valid_paths)
+                    }
+
                     # Process each path in the shape
                     for path_idx, points in enumerate(shape.points):
-                        # Check if this is a hole using the correct logic: Shape[1] Path[0]
-                        is_hole = (i == 1 and path_idx == 0 and len(shapes) >= 2 and can_have_holes)
-                        
+                        is_hole = hole_by_path_idx.get(path_idx, False)
+
                         if is_hole:
-                            # This is a hole: Shape[1] Path[0] in a skin file
                             print(f"    Found hole: Shape[{i}] Path[{path_idx}] (ID:{identifier}) in {clf_info['name']}")
-                            
+
                             hole_info = {
                                 'type': 'hole',
                                 'points': points,
