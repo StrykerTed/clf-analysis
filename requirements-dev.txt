@@ -1,0 +1,5 @@
+# Test-only dependencies. Kept separate from requirements.txt so the deployed
+# image does not carry a test runner.
+#   ./venv/bin/python -m pip install -r requirements-dev.txt
+#   ./venv/bin/python -m pytest
+pytest>=8.0
