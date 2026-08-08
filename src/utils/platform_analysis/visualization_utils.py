@@ -1049,14 +1049,29 @@ def create_transparent_paths_view_2100px(shapes_by_identifier, output_dir):
                 print(f"  ... and {len(no_identifier_shapes) - 5} more excluded shapes")
         print(f"======================\n")
         
-        plt.axis('equal')  # Ensure perfect square
-        
+        # This image exists to be plate-registered: its filename promises
+        # 210mm x 210mm at 2100px, and the 3D floor takes that at its word and
+        # textures a 210mm plane with it. Two calls used to break that promise.
+        #
+        # plt.axis('equal') refits the limits to the *data* aspect, throwing
+        # away the +/-105mm window set above; bbox_inches='tight' then crops the
+        # save to whatever the paths happened to span. The output was 2731x2276
+        # - not square, not 2100px, and with an extent that depends on where
+        # that build's parts sit on the plate. That is why the frontend needed a
+        # per-build table of hand-measured nudges to line the floor up, and why
+        # it could never be right for a build nobody had tuned it against.
+        #
+        # Re-assert the plate window instead, and save the figure at its
+        # declared size: 7.0in x 300dpi = 2100px, spanning exactly +/-105mm.
+        plt.xlim(-half_size, half_size)
+        plt.ylim(-half_size, half_size)
+
         # Save the transparent plot
         identifier_dir = os.path.join(output_dir, "identifier_views")
         os.makedirs(identifier_dir, exist_ok=True)
         filename = f'transparent_all_pathdata_{PLATFORM_SIZE_MM}mmx{PLATFORM_SIZE_MM}mm_2100px.png'
         output_path = os.path.join(identifier_dir, filename)
-        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
+        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches=None)
         plt.close()
         
         # ALSO create version that includes 'no_identifier' shapes for comparison
@@ -1203,14 +1218,18 @@ def create_transparent_paths_view_2100px_including_no_id(shapes_by_identifier, o
         print(f"Shapes with null points (skipped): {shapes_with_null_points}")
         print(f"============================================\n")
         
-        plt.axis('equal')  # Ensure perfect square
-        
+        # Same plate registration as the sibling view above - see the comment
+        # there for why axis('equal') and bbox_inches='tight' cannot be used on
+        # an image whose whole purpose is a known mm-per-pixel extent.
+        plt.xlim(-half_size, half_size)
+        plt.ylim(-half_size, half_size)
+
         # Save the transparent plot
         identifier_dir = os.path.join(output_dir, "identifier_views")
         os.makedirs(identifier_dir, exist_ok=True)
         filename = f'transparent_all_pathdata_WITH_NO_ID_{PLATFORM_SIZE_MM}mmx{PLATFORM_SIZE_MM}mm_2100px.png'
         output_path = os.path.join(identifier_dir, filename)
-        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches='tight')
+        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches=None)
         plt.close()
         
         print(f"Created 2100px transparent paths view (WITH NO_ID) at: {output_path}")
