@@ -48,6 +48,138 @@ logger = logging.getLogger(__name__)
 running_jobs = {}
 
 
+# ---------------------------------------------------------------------------
+# Per-build admission
+# ---------------------------------------------------------------------------
+# Both analyse routes accepted unconditionally and started a daemon thread, and
+# `run_analysis` opens by wiping the build's output directory:
+# `create_directory_structure(..., clear_existing=True)` rmtrees
+# <build>/clf_analysis wholesale, and `setup_abp_folders` rmtrees and
+# re-extracts the ABP contents directory. A second analysis of the same build
+# therefore deletes the first one's outputs while it is still writing them,
+# and re-extracts the ABP the first one is still reading.
+#
+# Unlike the layer-alignment service, this one is guarded *per build* rather
+# than one-at-a-time. That is a deliberate difference: the alignment pipeline
+# is driven through process-global environment variables, so any two jobs
+# there corrupt each other, whereas this pipeline holds no module-level
+# mutable state and writes only under its own build. Two different builds are
+# genuinely independent, so refusing them would remove capability for nothing.
+#
+# One caveat that is a performance matter rather than a correctness one, and so
+# is left alone here: `run_analysis` sizes its multiprocessing Pool to
+# min(cpu_count(), len(valid_files)), so two concurrent builds each claim every
+# core and both crawl. If that becomes a problem the fix is a worker-count cap,
+# not this lock.
+_admission_lock = threading.Lock()
+_active_builds = {}  # build_id -> {'job_id': str, 'thread': Thread | None}
+
+
+def _claim_build_slot(build_id, job_id):
+    """Claim the analysis slot for `build_id`.
+
+    Returns None when claimed, or the holder's job id when that build is
+    already being analysed.
+
+    A slot whose worker thread has died is reclaimed rather than blocking that
+    build forever; a slot held by a slow but living thread is kept, which is
+    the entire point of the guard.
+    """
+    with _admission_lock:
+        holder = _active_builds.get(build_id)
+        if holder is not None:
+            thread = holder['thread']
+            if thread is not None and not thread.is_alive():
+                logger.warning(
+                    "Reclaiming slot for build %s from job %s - its worker "
+                    "thread is no longer alive", build_id, holder['job_id']
+                )
+            else:
+                # thread is None only in the moment between claiming the slot
+                # and starting the worker, which is a real in-flight job.
+                return holder['job_id']
+        _active_builds[build_id] = {'job_id': job_id, 'thread': None}
+        return None
+
+
+def _attach_build_thread(build_id, job_id, thread):
+    """Record the worker thread so a dead one can be detected later."""
+    with _admission_lock:
+        holder = _active_builds.get(build_id)
+        if holder is not None and holder['job_id'] == job_id:
+            holder['thread'] = thread
+
+
+def _release_build_slot(build_id, job_id):
+    """Release the slot if `job_id` still holds it."""
+    with _admission_lock:
+        holder = _active_builds.get(build_id)
+        if holder is not None and holder['job_id'] == job_id:
+            del _active_builds[build_id]
+
+
+def _build_in_progress_response(build_id, holder_job_id):
+    """Refuse a second analysis of one build, naming the job that holds it."""
+    holder = running_jobs.get(holder_job_id, {})
+    logger.warning(
+        "Refusing analysis of build %s - job %s is already running it",
+        build_id, holder_job_id
+    )
+    return jsonify({
+        'status': 'error',
+        'message': (
+            f"Build {build_id} is already being analysed (job {holder_job_id}). "
+            f"Starting a second one would delete this one's output directory "
+            f"while it is still writing to it. Wait for it to finish, then retry."
+        ),
+        'active_job_id': holder_job_id,
+        'active_build_id': build_id,
+        'active_started_at': holder.get('started_at'),
+        'check_status_url': f'/api/jobs/{holder_job_id}'
+    }), 409
+
+
+def _start_analysis_job(build_id, holes_interval, create_composite_views):
+    """Admit and start one analysis job for `build_id`.
+
+    Returns (job_id, None) when started, or (None, response) when refused -
+    both routes share this so admission cannot be enforced in one and
+    forgotten in the other.
+    """
+    job_id = str(uuid.uuid4())
+
+    holder_job_id = _claim_build_slot(build_id, job_id)
+    if holder_job_id is not None:
+        return None, _build_in_progress_response(build_id, holder_job_id)
+
+    try:
+        running_jobs[job_id] = {
+            'job_id': job_id,
+            'build_id': build_id,
+            'status': 'queued',
+            'started_at': datetime.now().isoformat(),
+            'holes_interval': holes_interval,
+            'create_composite_views': create_composite_views
+        }
+
+        logger.info(f"Created job {job_id} for build_id: {build_id}")
+
+        thread = threading.Thread(
+            target=run_analysis_background,
+            args=(job_id, build_id, holes_interval, create_composite_views)
+        )
+        thread.daemon = True
+        thread.start()
+        _attach_build_thread(build_id, job_id, thread)
+    except BaseException:
+        # Nothing is running, so holding the slot would block this build for
+        # the lifetime of the process.
+        _release_build_slot(build_id, job_id)
+        raise
+
+    return job_id, None
+
+
 def run_analysis_background(job_id, build_id, holes_interval, create_composite_views):
     """Run analysis in background thread and update job status"""
     try:
@@ -75,6 +207,12 @@ def run_analysis_background(job_id, build_id, holes_interval, create_composite_v
         logger.exception(f"Job {job_id} error: {str(e)}")
         running_jobs[job_id]['status'] = 'failed'
         running_jobs[job_id]['error'] = str(e)
+
+    finally:
+        # Must be `finally`: a raise lands in the handler above, and a failed
+        # analysis still has to hand the build back or nothing can re-run it
+        # until the service is restarted.
+        _release_build_slot(build_id, job_id)
 
 
 @app.route('/')
@@ -143,28 +281,12 @@ def analyze():
                 'message': 'build_id is required'
             }), 400
         
-        # Generate unique job ID
-        job_id = str(uuid.uuid4())
-        
-        # Initialize job tracking
-        running_jobs[job_id] = {
-            'job_id': job_id,
-            'build_id': build_id,
-            'status': 'queued',
-            'started_at': datetime.now().isoformat(),
-            'holes_interval': holes_interval,
-            'create_composite_views': create_composite_views
-        }
-        
-        logger.info(f"Created job {job_id} for build_id: {build_id}")
-        
-        # Start analysis in background thread
-        thread = threading.Thread(
-            target=run_analysis_background,
-            args=(job_id, build_id, holes_interval, create_composite_views)
+        # One analysis per build at a time - see _claim_build_slot.
+        job_id, refusal = _start_analysis_job(
+            build_id, holes_interval, create_composite_views
         )
-        thread.daemon = True
-        thread.start()
+        if refusal is not None:
+            return refusal
         
         # Return immediately with job ID
         return jsonify({
@@ -211,28 +333,12 @@ def analyze_by_build(build_id):
         holes_interval = data.get('holes_interval', 10)
         create_composite_views = data.get('create_composite_views', False)
         
-        # Generate unique job ID
-        job_id = str(uuid.uuid4())
-        
-        # Initialize job tracking
-        running_jobs[job_id] = {
-            'job_id': job_id,
-            'build_id': build_id,
-            'status': 'queued',
-            'started_at': datetime.now().isoformat(),
-            'holes_interval': holes_interval,
-            'create_composite_views': create_composite_views
-        }
-        
-        logger.info(f"Created job {job_id} for build_id: {build_id}")
-        
-        # Start analysis in background thread
-        thread = threading.Thread(
-            target=run_analysis_background,
-            args=(job_id, build_id, holes_interval, create_composite_views)
+        # One analysis per build at a time - see _claim_build_slot.
+        job_id, refusal = _start_analysis_job(
+            build_id, holes_interval, create_composite_views
         )
-        thread.daemon = True
-        thread.start()
+        if refusal is not None:
+            return refusal
         
         # Return immediately with job ID
         return jsonify({
