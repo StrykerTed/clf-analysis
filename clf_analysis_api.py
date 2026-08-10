@@ -17,6 +17,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 # Import GPU detection utility (logs device info on import)
 from utils.device_utils import get_device, log_device_info
 
+# Cross-process lock over the build's derived artifacts - the collision the in-process
+# admission guard cannot see, because it is with a different service entirely.
+from utils.build_lock import build_write_lock, BuildLocked
+
 # Import the run_analysis function
 from tools.get_platform_paths_shapes_shapely import run_analysis
 
@@ -185,14 +189,26 @@ def run_analysis_background(job_id, build_id, holes_interval, create_composite_v
     try:
         logger.info(f"Starting background analysis for job {job_id}, build {build_id}")
         running_jobs[job_id]['status'] = 'running'
-        
-        # Run the analysis
-        result = run_analysis(
-            build_id=build_id,
-            holes_interval=holes_interval,
-            create_composite_views=create_composite_views
+
+        # Hold the build's cross-process write lock for the WHOLE analysis, not just
+        # the rmtree at the start. _claim_build_slot above stops *this* service running
+        # two analyses of one build; it cannot stop layer-alignments or defect-detect
+        # reading platform_layer_pathdata_*.json out of a directory this run is midway
+        # through deleting and rewriting, because a dict in this process is invisible
+        # to theirs. See utils/build_lock.py for why the lock file is a sibling of
+        # clf_analysis rather than inside it.
+        build_path = os.path.join(
+            os.getenv("MIDAS_BASE_PATH", "/midas_data"), str(build_id)
         )
-        
+        hint = f"clf-analysis job {job_id} started {datetime.now().isoformat(timespec='seconds')}"
+        with build_write_lock(build_path, hint=hint):
+            # Run the analysis
+            result = run_analysis(
+                build_id=build_id,
+                holes_interval=holes_interval,
+                create_composite_views=create_composite_views
+            )
+
         # Update job status
         if result.get('success'):
             running_jobs[job_id]['status'] = 'completed'
@@ -203,6 +219,14 @@ def run_analysis_background(job_id, build_id, holes_interval, create_composite_v
             running_jobs[job_id]['error'] = result.get('error', 'Unknown error')
             logger.error(f"Job {job_id} failed: {result.get('error')}")
             
+    except BuildLocked as e:
+        # Another process holds this build - almost certainly an analysis reading the
+        # artifacts we are about to delete. Fail with the holder named rather than
+        # deleting under it, and say so in terms someone can act on.
+        logger.warning(f"Job {job_id} refused: {e}")
+        running_jobs[job_id]['status'] = 'failed'
+        running_jobs[job_id]['error'] = str(e)
+
     except Exception as e:
         logger.exception(f"Job {job_id} error: {str(e)}")
         running_jobs[job_id]['status'] = 'failed'
