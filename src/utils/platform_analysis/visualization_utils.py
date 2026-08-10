@@ -19,7 +19,8 @@ from utils.myfuncs.plotTools import (
     set_platform_limits,
     draw_shape,
     draw_aligned_shape,
-    save_platform_figure
+    save_platform_figure,
+    save_plate_registered_figure
 )
 from utils.myfuncs.print_utils import add_platform_labels
 from utils.myfuncs.shape_things import should_close_path
@@ -1071,7 +1072,7 @@ def create_transparent_paths_view_2100px(shapes_by_identifier, output_dir):
         os.makedirs(identifier_dir, exist_ok=True)
         filename = f'transparent_all_pathdata_{PLATFORM_SIZE_MM}mmx{PLATFORM_SIZE_MM}mm_2100px.png'
         output_path = os.path.join(identifier_dir, filename)
-        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches=None)
+        save_plate_registered_figure(plt, output_path, expected_px=2100)
         plt.close()
         
         # ALSO create version that includes 'no_identifier' shapes for comparison
@@ -1229,7 +1230,7 @@ def create_transparent_paths_view_2100px_including_no_id(shapes_by_identifier, o
         os.makedirs(identifier_dir, exist_ok=True)
         filename = f'transparent_all_pathdata_WITH_NO_ID_{PLATFORM_SIZE_MM}mmx{PLATFORM_SIZE_MM}mm_2100px.png'
         output_path = os.path.join(identifier_dir, filename)
-        save_platform_figure(plt, output_path, pad_inches=0, bbox_inches=None)
+        save_plate_registered_figure(plt, output_path, expected_px=2100)
         plt.close()
         
         print(f"Created 2100px transparent paths view (WITH NO_ID) at: {output_path}")

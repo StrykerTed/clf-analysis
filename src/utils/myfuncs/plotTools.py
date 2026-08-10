@@ -108,6 +108,67 @@ def save_platform_figure(plt, output_path, dpi=300, bbox_inches='tight', pad_inc
     plt.savefig(output_path, dpi=dpi, bbox_inches=bbox_inches, pad_inches=pad_inches)
     plt.close()
 
+
+class PlateImageSizeError(RuntimeError):
+    """A plate-registered image was not saved at the size its filename promises."""
+
+
+def save_plate_registered_figure(plt, output_path, expected_px=2100, dpi=300):
+    """Save a plate-registered image, and prove it kept the promise in its name.
+
+    These filenames declare an exact geometry - ``..._210mmx210mm_2100px.png`` -
+    and the 3D floor takes that at its word, texturing a 210mm plane with the
+    file. So a wrong size is not cosmetic: every path drawn on the plate is
+    misregistered by whatever the discrepancy is, and it looks like a
+    calibration fault rather than a plotting one.
+
+    Two ways the promise has actually been broken, both of which reached the UI:
+
+    * ``plt.axis('equal')`` refits the limits to the data, and
+      ``bbox_inches='tight'`` then crops to whatever the paths spanned - so the
+      output size depended on where that build's parts sat on the plate.
+    * pyplot's current figure is process-global. With concurrent builds, a save
+      here captured another render entirely: on 10 Aug 2026 an identifier view
+      came out 4426x3831 holding a Combined Holes figure.
+
+    Neither announced itself. The file was written, the run reported success,
+    and the defect surfaced hours later as a wrong-looking floor. A saved image
+    can be measured in a millisecond, so measure it.
+
+    A mismatched file is quarantined rather than deleted - renamed so that the
+    resolver's ``^transparent_all_pathdata_\\d+mmx\\d+mm_\\d+px\\.png$`` pattern
+    can no longer match it, which stops it being served while keeping the
+    evidence for diagnosis.
+    """
+    import os
+
+    from PIL import Image
+
+    plt.savefig(output_path, dpi=dpi, bbox_inches=None, pad_inches=0)
+    plt.close()
+
+    with Image.open(output_path) as img:
+        width, height = img.size
+
+    if (width, height) == (expected_px, expected_px):
+        return output_path
+
+    quarantined = f"{output_path}.INVALID-{width}x{height}.png"
+    try:
+        os.replace(output_path, quarantined)
+    except OSError:
+        quarantined = None
+
+    raise PlateImageSizeError(
+        f"{os.path.basename(output_path)} promises {expected_px}x{expected_px} "
+        f"but was saved {width}x{height}. The 3D floor textures a 210mm plane "
+        f"with this file, so serving it would misregister every path on the "
+        f"plate. Most likely causes: a stray axis('equal')/bbox_inches='tight', "
+        f"or another figure was globally current when this was saved. "
+        + (f"Quarantined as {os.path.basename(quarantined)}."
+           if quarantined else "Could not quarantine the file.")
+    )
+
 def setup_standard_platform_view(title=None, figsize=(15, 15)):
     """Creates a standard platform view with boundary, grid, and reference lines"""
     from utils.myfuncs.print_utils import add_platform_labels

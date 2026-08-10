@@ -53,7 +53,7 @@ running_jobs = {}
 
 
 # ---------------------------------------------------------------------------
-# Per-build admission
+# Single-flight admission
 # ---------------------------------------------------------------------------
 # Both analyse routes accepted unconditionally and started a daemon thread, and
 # `run_analysis` opens by wiping the build's output directory:
@@ -63,45 +63,66 @@ running_jobs = {}
 # therefore deletes the first one's outputs while it is still writing them,
 # and re-extracts the ABP the first one is still reading.
 #
-# Unlike the layer-alignment service, this one is guarded *per build* rather
-# than one-at-a-time. That is a deliberate difference: the alignment pipeline
-# is driven through process-global environment variables, so any two jobs
-# there corrupt each other, whereas this pipeline holds no module-level
-# mutable state and writes only under its own build. Two different builds are
-# genuinely independent, so refusing them would remove capability for nothing.
+# This was originally guarded *per build*, on the reasoning that "this pipeline
+# holds no module-level mutable state and writes only under its own build, so
+# two different builds are genuinely independent". That reasoning was wrong.
+# Running it disproved it: matplotlib's pyplot IS module-level mutable state,
+# and every job in this process shares it.
 #
-# One caveat that is a performance matter rather than a correctness one, and so
-# is left alone here: `run_analysis` sizes its multiprocessing Pool to
-# min(cpu_count(), len(valid_files)), so two concurrent builds each claim every
-# core and both crawl. If that becomes a problem the fix is a worker-count cap,
-# not this lock.
+# `utils/platform_analysis/visualization_utils.py` drives pyplot through its
+# module-level API in 86 places, and `save_platform_figure(plt, path)` is handed
+# the *module*, so it saves whichever figure is globally current rather than one
+# it owns. On 10 Aug 2026 three builds were analysed concurrently for the first
+# time and two of the six plate-registered PNGs came back holding a different
+# render entirely: 515415's identifier view contained a Combined Holes view at
+# 4426x3831, and 515357's WITH_NO_ID view was 3727x3829, where both are required
+# to be exactly 2100x2100. The 3D floor textures a 210mm plane with that file at
+# its word, so the corruption reached the UI as a misregistered floor.
+#
+# So the slot is now global - one analysis at a time, whatever the build. The
+# rule this service teaches is the one the alignment service already taught with
+# its process-global environment variables: ask what two jobs *share*, not what
+# folder they write to. A per-build lock cannot see a shared figure registry,
+# and neither can the cross-service flock on <build>/.clf_analysis.lock, which
+# guards the filesystem.
+#
+# The narrower fix - give every view its own Figure and never touch global
+# pyplot state - is the better long-term answer and would allow concurrent
+# builds again. It is 86 call sites, so it is deliberately not bundled here.
+# Until it lands, serialising is what makes the output trustworthy.
+#
+# This also removes a performance problem that was previously tolerated:
+# `run_analysis` sizes its multiprocessing Pool to
+# min(cpu_count(), len(valid_files)), so concurrent builds each claimed every
+# core and all of them crawled.
 _admission_lock = threading.Lock()
 _active_builds = {}  # build_id -> {'job_id': str, 'thread': Thread | None}
 
 
 def _claim_build_slot(build_id, job_id):
-    """Claim the analysis slot for `build_id`.
+    """Claim the one analysis slot for `job_id`.
 
-    Returns None when claimed, or the holder's job id when that build is
-    already being analysed.
+    Returns None when claimed, or `(holder_build_id, holder_job_id)` when any
+    analysis is already running - including one on a different build, because
+    concurrent builds share this process's pyplot state. See the note above.
 
-    A slot whose worker thread has died is reclaimed rather than blocking that
-    build forever; a slot held by a slow but living thread is kept, which is
+    A slot whose worker thread has died is reclaimed rather than blocking the
+    service forever; a slot held by a slow but living thread is kept, which is
     the entire point of the guard.
     """
     with _admission_lock:
-        holder = _active_builds.get(build_id)
-        if holder is not None:
+        for held_build, holder in list(_active_builds.items()):
             thread = holder['thread']
             if thread is not None and not thread.is_alive():
                 logger.warning(
                     "Reclaiming slot for build %s from job %s - its worker "
-                    "thread is no longer alive", build_id, holder['job_id']
+                    "thread is no longer alive", held_build, holder['job_id']
                 )
-            else:
-                # thread is None only in the moment between claiming the slot
-                # and starting the worker, which is a real in-flight job.
-                return holder['job_id']
+                del _active_builds[held_build]
+                continue
+            # thread is None only in the moment between claiming the slot
+            # and starting the worker, which is a real in-flight job.
+            return held_build, holder['job_id']
         _active_builds[build_id] = {'job_id': job_id, 'thread': None}
         return None
 
@@ -122,22 +143,38 @@ def _release_build_slot(build_id, job_id):
             del _active_builds[build_id]
 
 
-def _build_in_progress_response(build_id, holder_job_id):
-    """Refuse a second analysis of one build, naming the job that holds it."""
+def _build_in_progress_response(build_id, holder_build_id, holder_job_id):
+    """Refuse a second analysis, naming the job that holds the slot.
+
+    The holder may be a *different* build, so say which one - "already being
+    analysed" about a build the caller did not ask for reads as a bug unless
+    the message explains itself.
+    """
     holder = running_jobs.get(holder_job_id, {})
     logger.warning(
-        "Refusing analysis of build %s - job %s is already running it",
-        build_id, holder_job_id
+        "Refusing analysis of build %s - job %s is already analysing build %s",
+        build_id, holder_job_id, holder_build_id
     )
-    return jsonify({
-        'status': 'error',
-        'message': (
+    if str(holder_build_id) == str(build_id):
+        message = (
             f"Build {build_id} is already being analysed (job {holder_job_id}). "
             f"Starting a second one would delete this one's output directory "
             f"while it is still writing to it. Wait for it to finish, then retry."
-        ),
+        )
+    else:
+        message = (
+            f"Build {holder_build_id} is being analysed (job {holder_job_id}), and "
+            f"this service runs one analysis at a time. Concurrent builds share "
+            f"this process's matplotlib state and corrupt each other's "
+            f"plate-registered images. Wait for it to finish, then retry "
+            f"build {build_id}."
+        )
+    return jsonify({
+        'status': 'error',
+        'message': message,
         'active_job_id': holder_job_id,
-        'active_build_id': build_id,
+        'active_build_id': holder_build_id,
+        'requested_build_id': build_id,
         'active_started_at': holder.get('started_at'),
         'check_status_url': f'/api/jobs/{holder_job_id}'
     }), 409
@@ -152,9 +189,10 @@ def _start_analysis_job(build_id, holes_interval, create_composite_views):
     """
     job_id = str(uuid.uuid4())
 
-    holder_job_id = _claim_build_slot(build_id, job_id)
-    if holder_job_id is not None:
-        return None, _build_in_progress_response(build_id, holder_job_id)
+    holder = _claim_build_slot(build_id, job_id)
+    if holder is not None:
+        holder_build_id, holder_job_id = holder
+        return None, _build_in_progress_response(build_id, holder_build_id, holder_job_id)
 
     try:
         running_jobs[job_id] = {
