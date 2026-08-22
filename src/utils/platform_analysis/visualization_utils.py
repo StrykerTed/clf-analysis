@@ -25,6 +25,7 @@ from utils.myfuncs.plotTools import (
 from utils.myfuncs.print_utils import add_platform_labels
 from utils.myfuncs.shape_things import should_close_path
 from utils.pyarcam.clfutil import CLFFile
+from utils.platform_analysis.pathdata_io import dump_path_data
 
 
 def create_combined_excluded_identifier_platform_view(excluded_shapes_by_identifier, output_dir):
@@ -1338,8 +1339,10 @@ def create_clean_platform(clf_files, output_dir, height=1.0, fill_closed=False, 
         print(f"\nWriting shape data to: {data_output_path}")
         print(f"Number of shapes being written: {len(shape_data_list)}")
         
-        with open(data_output_path, 'w') as f:
-            json.dump(shape_data_list, f, indent=2)
+        # Compact + 4 dp: this is 98.8% of the stage's output and the
+        # indentation alone was ~45% of the bytes. See pathdata_io for the
+        # measurements, including why the rounding cannot move the cut.
+        dump_path_data(shape_data_list, data_output_path)
         
         print(f"Successfully wrote shape data for height {height}mm")
         
@@ -1494,8 +1497,10 @@ def create_clean_platform_skin_only(clf_files, output_dir, height=1.0, fill_clos
         print(f"\nWriting enhanced shape data to: {data_output_path}")
         print(f"Number of shapes being written: {len(shape_data_list)}")
         
-        with open(data_output_path, 'w') as f:
-            json.dump(shape_data_list, f, indent=2)
+        # Compact + 4 dp: this is 98.8% of the stage's output and the
+        # indentation alone was ~45% of the bytes. See pathdata_io for the
+        # measurements, including why the rounding cannot move the cut.
+        dump_path_data(shape_data_list, data_output_path)
         
         print(f"Successfully wrote enhanced shape data for height {height}mm")
         
@@ -1845,8 +1850,10 @@ def create_clean_platform_skin_only_enhanced(clf_files, output_dir, height=1.0, 
         print(f"\nWriting enhanced shape data to: {data_output_path}")
         print(f"Number of shapes being written: {len(shape_data_list)}")
         
-        with open(data_output_path, 'w') as f:
-            json.dump(shape_data_list, f, indent=2)
+        # Compact + 4 dp: this is 98.8% of the stage's output and the
+        # indentation alone was ~45% of the bytes. See pathdata_io for the
+        # measurements, including why the rounding cannot move the cut.
+        dump_path_data(shape_data_list, data_output_path)
         
         print(f"Successfully wrote enhanced shape data for height {height}mm")
         
