@@ -26,6 +26,7 @@ from utils.myfuncs.print_utils import add_platform_labels
 from utils.myfuncs.shape_things import should_close_path
 from utils.pyarcam.clfutil import CLFFile
 from utils.platform_analysis.pathdata_io import dump_path_data
+from utils.platform_analysis.clf_cache import open_clf
 
 
 def create_combined_excluded_identifier_platform_view(excluded_shapes_by_identifier, output_dir):
@@ -626,12 +627,15 @@ def process_layer_data(clf_info, height, colors):
     Used by create_clean_platform for parallel processing.
     Holes are detected geometrically, by even-odd nesting depth within each shape."""
     shape_data_list = []
-    
+
     try:
-        part = CLFFile(clf_info['path'])
+        # Reused rather than re-opened. This function runs once per (file, height),
+        # so on a real build it is called ~85,000 times against ~24 distinct files,
+        # and the open costs 21x what the find() below costs. See clf_cache.
+        part = open_clf(clf_info['path'])
         if not hasattr(part, 'box'):
             return shape_data_list
-            
+
         layer = part.find(height)
         if layer is None:
             return shape_data_list
