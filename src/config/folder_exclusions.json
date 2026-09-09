@@ -1,22 +1,30 @@
 {
     "excluded_folder_patterns": [
-        "_Support",
+        "Support",
         "supports",
         "SUPPORTS",
-        "Supports",
-        "ebm-ti64",
         "Porous",
         "porous",
-        "Support",
+        "POROUS",
         "s_Skin",
         "hiplabel",
         "Birdcage",
         "_s_"
     ],
     "metadata": {
-        "description": "List of partial folder names that should be excluded from CLF processing",
-        "version": "1.3",
-        "last_updated": "2026-09-08",
-        "usage": "Match these patterns against folder names to determine if a folder should be skipped during CLF processing"
+        "description": "Partial folder names skipped during CLF processing. Matched as a CASE-SENSITIVE SUBSTRING of the folder name with spaces replaced by underscores (see should_skip_folder in src/utils/myfuncs/file_utils.py), so each casing needs its own entry.",
+        "version": "1.4",
+        "last_updated": "2026-09-09",
+        "usage": "Match these patterns against folder names to determine if a folder should be skipped during CLF processing",
+        "rules": [
+            "NEVER put a MATERIAL or ALLOY name in this list. It names what a part is made of, not what the part IS, so it removes solid geometry. The pattern 'ebm-ti64' did exactly that: it silently excluded 52 Solid_CORE/Solid_SKIN folders across 11 plates - including every tensile specimen (ten-ebm-ti64-*) on build 512002, which is named 'EBM04 Tensile Failure Build'. Removed in v1.4.",
+            "Only exclude what is not part surface we want defects on: supports, porous structure, labels.",
+            "An excluded folder can be the ONLY geometry at a height, and that layer is then written as an empty []. Part 201 has 300 such layers of 3021, so a path-layer FILE count overstates the drawn layers - count non-empty layers instead.",
+            "Removing a pattern can promote another to load-bearing: 'porous' had 0 unique hits only because 'ebm-ti64' also matched those folders."
+        ],
+        "changelog": {
+            "1.4": "Removed 'ebm-ti64' (excluded real solid parts). Added 'POROUS' for casing symmetry with 'SUPPORTS'. Dropped '_Support' and 'Supports' as strict substrings of 'Support'. Net effect measured over 1137 folders on 11 plates: 52 folders newly included, all core/skin; 0 newly excluded; 0 support/porous folders promoted.",
+            "1.3": "Removed Cylinder and Coupon."
+        }
     }
 }
